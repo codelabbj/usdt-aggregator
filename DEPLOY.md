@@ -67,7 +67,7 @@ Créer un fichier `.env` à la racine du projet (ou exporter les variables dans 
 |----------|---------|-------------|
 | `DJANGO_SECRET_KEY` | Chaîne longue aléatoire | Obligatoire en prod (générer une nouvelle clé). |
 | `DEBUG` | `0` | Mettre à `0` en production. |
-| `ALLOWED_HOSTS` | `ton-domaine.com,IP_DU_SERVEUR` | Domaines et IP autorisés, séparés par des virgules. |
+| `ALLOWED_HOSTS` | `exchange.pals.africa,82.29.179.215` | Host(s) autorisé(s) : sous-domaine ou IP. Plusieurs valeurs séparées par des virgules. |
 
 **Optionnel :**
 
@@ -83,7 +83,7 @@ Exemple `.env` minimal en prod :
 ```bash
 # .env (ne pas commiter, ajouter à .gitignore si besoin)
 DEBUG=0
-ALLOWED_HOSTS=ton-domaine.com,123.45.67.89
+ALLOWED_HOSTS=exchange.pals.africa,82.29.179.215
 DJANGO_SECRET_KEY=genere-une-longue-cle-aleatoire-ici
 ```
 
@@ -99,7 +99,7 @@ Par défaut le projet utilise **SQLite** (`db.sqlite3`). En production légère,
 source .venv/bin/activate
 cd /var/www/usdt_aggregator
 export DEBUG=0
-export ALLOWED_HOSTS=ton-domaine.com
+export ALLOWED_HOSTS=exchange.pals.africa,82.29.179.215
 export DJANGO_SECRET_KEY=ta-secret-key
 
 python manage.py migrate
@@ -127,7 +127,7 @@ source .venv/bin/activate
 cd /var/www/usdt_aggregator
 
 export DEBUG=0
-export ALLOWED_HOSTS=ton-domaine.com,127.0.0.1
+export ALLOWED_HOSTS=exchange.pals.africa,82.29.179.215
 export DJANGO_SECRET_KEY=ta-secret-key
 
 gunicorn usdt_aggregator.wsgi:application --bind 0.0.0.0:8000 --workers 2
@@ -201,7 +201,7 @@ Exemple de configuration : `/etc/nginx/sites-available/usdt-aggregator`
 ```nginx
 server {
     listen 80;
-    server_name ton-domaine.com;
+    server_name exchange.pals.africa;
 
     location /static/ {
         alias /var/www/usdt_aggregator/staticfiles/;
@@ -246,9 +246,9 @@ Pour HTTPS : utiliser Certbot (Let’s Encrypt) : `sudo apt install certbot pyth
 
 ## 12. Après déploiement
 
-- **Admin** : `https://ton-domaine.com/admin/`
-- **Dashboard** : `https://ton-domaine.com/dashboard/`
-- **API** : `https://ton-domaine.com/api/v1/` (JWT ou API Key)
-- **Swagger** : `https://ton-domaine.com/api/docs/`
+- **Admin** : `https://exchange.pals.africa/admin/`
+- **Dashboard** : `https://exchange.pals.africa/dashboard/`
+- **API** : `https://exchange.pals.africa/api/v1/` (JWT ou API Key)
+- **Swagger** : `https://exchange.pals.africa/api/docs/`
 
 Configurer l’intervalle de refresh dans **Dashboard > Refresh taux** (ou Admin > Config refresh best rates).

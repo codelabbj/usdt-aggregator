@@ -1,7 +1,13 @@
 import os
 from pathlib import Path
 
+import environ
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Charger les variables du fichier .env (à la racine du projet) dans os.environ
+env = environ.Env()
+environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-change-in-production")
 
