@@ -35,12 +35,24 @@ cd usdt_aggregator
 
 ## 3. Environnement virtuel et dépendances
 
+**Exécuter les commandes ci‑dessous avec l’utilisateur qui fera tourner l’app (pas en `sudo`)** : sinon le venv sera propriété de root et tu n’auras pas les droits pour l’utiliser.
+
+Si tu as **Permission denied** en créant le venv, le répertoire du projet appartient sans doute à root. À faire **une fois** (en root ou avec sudo) pour donner la propriété à ton utilisateur (remplace `classified` par ton user si besoin) :
+```bash
+sudo chown -R classified:classified /var/www/usdt_aggregator
+```
+Ensuite, **sans sudo** :
 ```bash
 cd /var/www/usdt_aggregator
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+Si tu as déjà créé le venv en root par erreur, reprendre uniquement la propriété du venv :
+```bash
+sudo chown -R classified:classified /var/www/usdt_aggregator/.venv
 ```
 
 ---
