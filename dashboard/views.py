@@ -3,8 +3,46 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.views.decorators.http import require_http_methods
 
-from core.models import LiquidityConfig, RateAdjustment, PlatformConfig, BestRatesRefreshConfig
+from django.utils import timezone
+from decimal import Decimal
+from core.models import LiquidityConfig, RateAdjustment, PlatformConfig, BestRatesRefreshConfig, APIKey, APIKeyUsage, BillingConfig
 from platforms.registry import init_platforms, get_all_platforms, get_default_platform
+
+
+@staff_member_required
+def billing(request):
+    """Page dashboard facturation : config globale, clés API, usage et montant estimé."""
+    now = timezone.now()
+    current_period = now.strftime("%Y-%m")
+    billing_config = BillingConfig.objects.first()
+    if not billing_config:
+        billing_config = BillingConfig(price_per_call=Decimal("0"), currency="EUR")
+    api_keys = list(APIKey.objects.all().order_by("-created_at"))
+    usages = {
+        (u.api_key_id, u.period): u.call_count
+        for u in APIKeyUsage.objects.filter(api_key__in=api_keys)
+    }
+    price = billing_config.price_per_call
+    rows = []
+    for key in api_keys:
+        current = usages.get((key.id, current_period), 0)
+        other = [(p, c) for (kid, p), c in usages.items() if kid == key.id and p != current_period]
+        other.sort(key=lambda x: x[0], reverse=True)
+        if key.billing_exempt:
+            estimated_amount = None
+        else:
+            estimated_amount = (Decimal(current) * price) if price else Decimal("0")
+        rows.append({
+            "key": key,
+            "current_usage": current,
+            "other_periods": other,
+            "estimated_amount": estimated_amount,
+        })
+    return render(request, "dashboard/billing.html", {
+        "billing_config": billing_config,
+        "rows": rows,
+        "current_period": current_period,
+    })
 
 
 @staff_member_required

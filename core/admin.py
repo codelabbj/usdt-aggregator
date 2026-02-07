@@ -1,5 +1,6 @@
+from django.utils import timezone
 from django.contrib import admin
-from .models import LiquidityConfig, RateAdjustment, PlatformConfig, APIKey, BestRatesRefreshConfig, BestRate
+from .models import LiquidityConfig, RateAdjustment, PlatformConfig, APIKey, APIKeyUsage, BillingConfig, BestRatesRefreshConfig, BestRate
 
 
 @admin.register(LiquidityConfig)
@@ -19,9 +20,48 @@ class PlatformConfigAdmin(admin.ModelAdmin):
     list_display = ("code", "name", "active", "is_default")
 
 
+@admin.register(APIKeyUsage)
+class APIKeyUsageAdmin(admin.ModelAdmin):
+    list_display = ("api_key", "period", "call_count")
+    list_filter = ("period",)
+    readonly_fields = ("api_key", "period", "call_count")
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(BillingConfig)
+class BillingConfigAdmin(admin.ModelAdmin):
+    list_display = ("price_per_call", "currency", "updated_at")
+
+    def has_add_permission(self, request):
+        return not BillingConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(APIKey)
 class APIKeyAdmin(admin.ModelAdmin):
-    list_display = ("name", "key", "active", "created_at")
+    list_display = ("name", "key_preview", "active", "billing_exempt", "monthly_quota", "usage_current_month", "created_at")
+    list_filter = ("active", "billing_exempt")
+    readonly_fields = ("key",)
+
+    def key_preview(self, obj):
+        if not obj.key:
+            return "—"
+        return f"{obj.key[:8]}…" if len(obj.key) > 8 else obj.key
+    key_preview.short_description = "Clé"
+
+    def usage_current_month(self, obj):
+        period = timezone.now().strftime("%Y-%m")
+        try:
+            u = APIKeyUsage.objects.get(api_key=obj, period=period)
+            quota = f" / {obj.monthly_quota}" if obj.monthly_quota else ""
+            return f"{u.call_count}{quota}"
+        except APIKeyUsage.DoesNotExist:
+            return f"0{f' / {obj.monthly_quota}' if obj.monthly_quota else ''}"
+    usage_current_month.short_description = "Appels ce mois"
 
 
 @admin.register(BestRatesRefreshConfig)

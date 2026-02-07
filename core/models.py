@@ -88,16 +88,77 @@ class PlatformConfig(models.Model):
         return f"{self.name} ({self.code})"
 
 
+def _generate_api_key():
+    import secrets
+    return secrets.token_urlsafe(32)
+
+
 class APIKey(models.Model):
-    """Clé API pour authentification (alternative à JWT)."""
-    name = models.CharField(max_length=100, help_text="Usage ou identifiant")
-    key = models.CharField(max_length=64, unique=True)
+    """Clé API pour authentification et facturation par nombre d'appels."""
+    name = models.CharField(max_length=100, help_text="Usage ou identifiant client")
+    key = models.CharField(max_length=64, unique=True, blank=True, help_text="Laisser vide pour générer à l'enregistrement.")
     active = models.BooleanField(default=True)
+    monthly_quota = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Nombre max d'appels par mois (vide = illimité).",
+    )
+    billing_exempt = models.BooleanField(
+        default=False,
+        help_text="Si coché, cette clé est exemptée de facturation (montant = 0).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Clé API"
         verbose_name_plural = "Clés API"
+
+    def save(self, *args, **kwargs):
+        if not self.key:
+            self.key = _generate_api_key()
+        super().save(*args, **kwargs)
+
+
+class APIKeyUsage(models.Model):
+    """Compteur d'appels par clé API et par mois (pour facturation)."""
+    api_key = models.ForeignKey(APIKey, on_delete=models.CASCADE, related_name="usages")
+    period = models.CharField(max_length=7, help_text="YYYY-MM")
+    call_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Usage API (mois)"
+        verbose_name_plural = "Usages API (mois)"
+        unique_together = [["api_key", "period"]]
+        ordering = ["api_key", "-period"]
+
+    def __str__(self):
+        return f"{self.api_key.name} {self.period}: {self.call_count} appels"
+
+
+class BillingConfig(models.Model):
+    """
+    Configuration globale de facturation (une seule ligne = singleton).
+    Prix par appel appliqué à toutes les clés non exemptées.
+    """
+    price_per_call = models.DecimalField(
+        max_digits=12,
+        decimal_places=6,
+        default=0,
+        help_text="Prix facturé par appel API (ex: 0.001 pour 0,001 €/appel).",
+    )
+    currency = models.CharField(
+        max_length=10,
+        default="EUR",
+        help_text="Devise (ex: EUR, USD, XOF).",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Config facturation"
+        verbose_name_plural = "Config facturation"
+
+    def __str__(self):
+        return f"{self.price_per_call} {self.currency}/appel"
 
 
 class BestRatesRefreshConfig(models.Model):

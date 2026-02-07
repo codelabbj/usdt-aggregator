@@ -37,6 +37,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "api.middleware.api_key_usage_middleware",
 ]
 
 ROOT_URLCONF = "usdt_aggregator.urls"
@@ -92,7 +93,10 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ),
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+        "api.auth.CheckAPIKeyQuota",
+    ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     # Pas de URLPathVersioning : le préfixe /api/v1/ est fixe, pas un paramètre de version DRF.
     # Garder DEFAULT_VERSIONING_CLASS vide évite "No operations defined in spec!" dans Swagger.

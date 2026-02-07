@@ -14,4 +14,5 @@ urlpatterns = [
     path("platforms/", views.platform_config, name="platform_config"),
     path("platforms/set-default/", views.platform_set_default, name="platform_set_default"),
     path("refresh-config/", views.refresh_config, name="refresh_config"),
+    path("facturation/", views.billing, name="billing"),
 ]

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Facturation - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Facturation</h1>
+  <p>Configuration globale, usage des clés API par mois et montant estimé. Clés et config dans l’<a href="{% url 'admin:core_apikey_changelist' %}">admin Django</a>.</p>
+</div>
+<div class="card">
+  <h2>Config facturation globale</h2>
+  {% if billing_config.pk %}
+  <p style="margin: 0 0 0.75rem 0; color: var(--text-muted);">Prix par appel appliqué à toutes les clés <strong>non exemptées</strong>.</p>
+  <p style="margin: 0 0 0.75rem 0;"><strong>{{ billing_config.price_per_call }} {{ billing_config.currency }}</strong> par appel</p>
+  <a href="{% url 'admin:core_billingconfig_change' billing_config.pk %}" class="btn btn-secondary">Modifier la config (admin)</a>
+  {% else %}
+  <p style="margin: 0 0 0.75rem 0; color: var(--text-muted);">Aucune config enregistrée. Créez-en une dans l’admin pour afficher les montants estimés.</p>
+  <a href="{% url 'admin:core_billingconfig_add' %}" class="btn">Créer la config facturation (admin)</a>
+  {% endif %}
+</div>
+<div class="card">
+  <div style="margin-bottom: 1rem;">
+    <a href="{% url 'admin:core_apikey_add' %}" class="btn">Nouvelle clé API (admin)</a>
+    <a href="{% url 'admin:core_apikeyusage_changelist' %}" class="btn btn-secondary">Voir tous les usages</a>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Nom</th>
+        <th>Clé (aperçu)</th>
+        <th>Actif</th>
+        <th>Exempté facturation</th>
+        <th>Quota / mois</th>
+        <th>Appels ce mois ({{ current_period }})</th>
+        <th>Montant estimé (ce mois)</th>
+        <th>Mois précédents</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.key.name }}</td>
+        <td><code>{% if row.key.key %}{{ row.key.key|slice:":8" }}…{% else %}—{% endif %}</code></td>
+        <td>{% if row.key.active %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
+        <td>{% if row.key.billing_exempt %}<span class="badge badge-muted">Oui</span>{% else %}Non{% endif %}</td>
+        <td>{% if row.key.monthly_quota %}{{ row.key.monthly_quota }}{% else %}Illimité{% endif %}</td>
+        <td>{{ row.current_usage }}{% if row.key.monthly_quota %} / {{ row.key.monthly_quota }}{% endif %}</td>
+        <td>{% if row.estimated_amount is None %}— exempté{% else %}{{ row.estimated_amount }} {{ billing_config.currency }}{% endif %}</td>
+        <td>
+          {% for period, count in row.other_periods %}
+            {{ period }}: {{ count }}{% if not forloop.last %} · {% endif %}
+          {% empty %}
+            —
+          {% endfor %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8">Aucune clé API. Créez-en une dans l’<a href="{% url 'admin:core_apikey_add' %}">admin</a>.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="card">
+  <h2>Comment ça marche</h2>
+  <ul style="margin: 0; padding-left: 1.25rem; color: var(--text-muted); font-size: 0.9rem;">
+    <li><strong>Config globale</strong> : prix par appel et devise (Admin → Config facturation). S’applique à toutes les clés sauf celles marquées « Exempté facturation ».</li>
+    <li>Chaque requête API réussie (2xx) authentifiée par clé API compte pour 1 appel.</li>
+    <li>Clés <strong>exemptées</strong> : pas de montant facturé (usage toujours compté pour statistiques).</li>
+    <li>Si une clé a un <strong>quota mensuel</strong>, les appels au-delà renvoient 429.</li>
+    <li>Clés et exemption : <a href="{% url 'admin:core_apikey_changelist' %}">Admin → Clés API</a>.</li>
+  </ul>
+</div>
+{% endblock %}
