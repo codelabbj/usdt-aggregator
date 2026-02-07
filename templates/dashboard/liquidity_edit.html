@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Liquidité {{ config.trade_type }} - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Liquidité – {{ config.get_trade_type_display }}</h1>
+  <p>Quantités min/max en USDT pour exclure les offres hors bornes.</p>
+</div>
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-group">
+      <label>Quantité minimale (USDT)</label>
+      <input type="number" name="min_amount" step="any" value="{{ config.min_amount|default:0 }}" required>
+    </div>
+    <div class="form-group">
+      <label>Quantité maximale (USDT)</label>
+      <input type="number" name="max_amount" step="any" value="{{ config.max_amount|default:'' }}" placeholder="Laisser vide pour pas de limite">
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" name="active" {% if config.active %}checked{% endif %}> Actif</label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn">Enregistrer</button>
+      <a href="{% url 'dashboard:liquidity_config' %}" class="btn btn-secondary">Annuler</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

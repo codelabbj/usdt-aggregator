@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - USDT Aggregator{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Dashboard</h1>
+  <p>Configuration des offres P2P USDT (XOF, GHS, XAF), liquidité, taux et plateformes.</p>
+</div>
+
+<div class="card">
+  <h2>Plateforme par défaut</h2>
+  <p style="margin: 0 0 1rem 0; color: var(--text-muted);">Utilisée pour récupérer les offres lorsque aucun paramètre <code>platform</code> n’est fourni à l’API.</p>
+  <p style="margin: 0 0 1rem 0;"><strong style="color: var(--accent);">{{ default_platform|default:"binance" }}</strong></p>
+  <ul style="margin: 0 0 1rem 0; padding-left: 1.25rem;">
+    {% for code, platform in platforms.items %}
+    <li>{{ platform.name }} <code>{{ code }}</code></li>
+    {% empty %}
+    <li>Aucune plateforme chargée.</li>
+    {% endfor %}
+  </ul>
+  <a href="{% url 'dashboard:platform_config' %}" class="btn">Configurer les plateformes</a>
+</div>
+
+<div class="card">
+  <h2>Configuration rapide</h2>
+  <ul class="links-list">
+    <li><a href="{% url 'dashboard:liquidity_config' %}">Liquidité min/max</a> – Filtrer les offres par quantité disponible (BUY / SELL)</li>
+    <li><a href="{% url 'dashboard:rate_adjustments' %}">Ajustements de taux</a> – Markup / markdown (%, montant fixe), par devise, pays, type</li>
+    <li><a href="{% url 'dashboard:refresh_config' %}">Refresh des best rates</a> – Fréquence de rafraîchissement (cron 1 min sur le serveur)</li>
+    <li><a href="{% url 'swagger-ui' %}" target="_blank">API REST</a> – Offres, taux croisés, paramètres (JWT, Swagger)</li>
+  </ul>
+</div>
+{% endblock %}

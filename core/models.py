@@ -1,0 +1,146 @@
+from django.db import models
+
+
+class LiquidityConfig(models.Model):
+    """Quantité min/max pour filtrer les offres BUY et SELL."""
+
+    TRADE_TYPE_BUY = "BUY"
+    TRADE_TYPE_SELL = "SELL"
+    TRADE_TYPES = [(TRADE_TYPE_BUY, "Achat"), (TRADE_TYPE_SELL, "Vente")]
+
+    trade_type = models.CharField(max_length=4, choices=TRADE_TYPES)
+    min_amount = models.DecimalField(
+        max_digits=20, decimal_places=8, default=0,
+        help_text="Quantité minimale (en USDT)"
+    )
+    max_amount = models.DecimalField(
+        max_digits=20, decimal_places=8, null=True, blank=True,
+        help_text="Quantité maximale (en USDT), vide = pas de limite"
+    )
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Config liquidité"
+        verbose_name_plural = "Configs liquidité"
+        unique_together = [["trade_type"]]
+
+    def __str__(self):
+        return f"Liquidité {self.get_trade_type_display()} min={self.min_amount} max={self.max_amount}"
+
+
+class RateAdjustment(models.Model):
+    """Ajustement des taux (markup/markdown): % ou montant fixe."""
+
+    SCOPE_GLOBAL = "global"
+    SCOPE_CURRENCY = "currency"
+    SCOPE_COUNTRY = "country"
+    SCOPE_TRADE_TYPE = "trade_type"
+    SCOPE_CHOICES = [
+        (SCOPE_GLOBAL, "Global"),
+        (SCOPE_CURRENCY, "Par devise"),
+        (SCOPE_COUNTRY, "Par pays (XOF)"),
+        (SCOPE_TRADE_TYPE, "Par type (achat/vente)"),
+    ]
+
+    MODE_PERCENT = "percent"
+    MODE_FIXED = "fixed"
+    MODE_CHOICES = [(MODE_PERCENT, "Pourcentage (%)"), (MODE_FIXED, "Montant fixe")]
+
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default=SCOPE_GLOBAL)
+    currency = models.CharField(max_length=10, blank=True, help_text="Ex: XOF, GHS, XAF")
+    country = models.CharField(max_length=50, blank=True, help_text="Ex: Bénin, Sénégal (pour XOF)")
+    trade_type = models.CharField(max_length=4, blank=True, choices=[("BUY", "Achat"), ("SELL", "Vente")])
+    mode = models.CharField(max_length=10, choices=MODE_CHOICES)
+    value = models.DecimalField(
+        max_digits=20, decimal_places=8,
+        help_text="Pourcentage (ex: 2.5) ou montant fixe"
+    )
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Ajustement de taux"
+        verbose_name_plural = "Ajustements de taux"
+
+    def __str__(self):
+        return f"{self.get_scope_display()} {self.get_mode_display()}={self.value}"
+
+
+class PlatformConfig(models.Model):
+    """Plateforme P2P source (Binance par défaut, extensible)."""
+
+    code = models.CharField(max_length=30, unique=True)
+    name = models.CharField(max_length=100)
+    active = models.BooleanField(default=True)
+    is_default = models.BooleanField(default=False)
+    config = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Plateforme P2P"
+        verbose_name_plural = "Plateformes P2P"
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
+class APIKey(models.Model):
+    """Clé API pour authentification (alternative à JWT)."""
+    name = models.CharField(max_length=100, help_text="Usage ou identifiant")
+    key = models.CharField(max_length=64, unique=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Clé API"
+        verbose_name_plural = "Clés API"
+
+
+class BestRatesRefreshConfig(models.Model):
+    """
+    Config du rafraîchissement des best rates (une seule ligne = singleton).
+    L'admin définit l'intervalle en minutes ; le cron appelle la commande chaque minute,
+    la commande n'exécute le refresh que si (now - last_run_at) >= interval_minutes.
+    """
+    INTERVAL_CHOICES = [(1, "1 min"), (5, "5 min"), (10, "10 min"), (15, "15 min"), (30, "30 min")]
+    interval_minutes = models.PositiveSmallIntegerField(
+        default=5,
+        choices=INTERVAL_CHOICES,
+        help_text="Fréquence de rafraîchissement (cron doit appeler la commande toutes les 1 min).",
+    )
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True, help_text="Désactiver pour arrêter le refresh automatique.")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Config refresh best rates"
+        verbose_name_plural = "Config refresh best rates"
+
+    def __str__(self):
+        return f"Refresh toutes les {self.interval_minutes} min (dernier: {self.last_run_at})"
+
+
+class BestRate(models.Model):
+    """
+    Meilleurs taux USDT/fiat par devise, type (BUY/SELL) et plateforme. Pas de filtre pays.
+    Jusqu'à 3 lignes par (fiat, trade_type, platform). À la lecture on trie par rate
+    et on expose les 3 meilleurs tous plateformes confondus (SELL = desc, BUY = asc).
+    """
+    fiat = models.CharField(max_length=10)
+    trade_type = models.CharField(max_length=4)  # BUY, SELL
+    country = models.CharField(max_length=10, blank=True)
+    platform = models.CharField(max_length=30)
+    rate = models.DecimalField(max_digits=20, decimal_places=8)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Meilleur taux"
+        verbose_name_plural = "Meilleurs taux"
+        ordering = ["fiat", "trade_type", "country", "platform", "rate"]
+
+    def __str__(self):
+        return f"USDT/{self.fiat} {self.trade_type} {self.rate} ({self.platform})"

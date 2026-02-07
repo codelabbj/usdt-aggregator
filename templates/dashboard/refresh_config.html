@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Refresh best rates - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Refresh des best rates</h1>
+  <p>Fréquence de rafraîchissement des 3 meilleurs taux (alimente l’API best-rates). Le cron sur le serveur doit appeler la commande <strong>toutes les minutes</strong> ; ici vous choisissez à quel intervalle le refresh s’exécute réellement.</p>
+</div>
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-group">
+      <label>Intervalle (minutes)</label>
+      <select name="interval_minutes">
+        {% for value, label in config.INTERVAL_CHOICES %}
+        <option value="{{ value }}" {% if config.interval_minutes == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" name="is_active" {% if config.is_active %}checked{% endif %}> Refresh actif</label>
+      <p style="margin: 0.35rem 0 0 0; font-size: 0.85rem; color: var(--text-muted);">Désactiver pour arrêter le rafraîchissement automatique (le cron continuera d’appeler la commande mais elle ne fera rien).</p>
+    </div>
+    <div class="form-group" style="padding: 0.75rem; background: #f8fafc; border-radius: var(--radius-sm);">
+      <strong>Dernière exécution</strong>
+      <p style="margin: 0.35rem 0 0 0; font-size: 0.9rem;">
+        {% if config.last_run_at %}
+        {{ config.last_run_at|date:"d/m/Y H:i:s" }}
+        {% else %}
+        Jamais
+        {% endif %}
+      </p>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn">Enregistrer</button>
+    </div>
+  </form>
+</div>
+<div class="card">
+  <h2>Déploiement</h2>
+  <p style="margin: 0 0 0.75rem 0; color: var(--text-muted);">Sur le serveur, ajoutez une ligne cron (toutes les 1 min) :</p>
+  <pre style="margin: 0; padding: 1rem; background: #0f172a; color: #e2e8f0; border-radius: var(--radius-sm); font-size: 0.85rem; overflow-x: auto;">* * * * * cd /chemin/vers/usdt_aggregator && .venv/bin/python manage.py refresh_best_rates</pre>
+  <p style="margin: 0.75rem 0 0 0; font-size: 0.85rem; color: var(--text-muted);">Remplacez le chemin et le nom du venv selon votre installation.</p>
+</div>
+{% endblock %}

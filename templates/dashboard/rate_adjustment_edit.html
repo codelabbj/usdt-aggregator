@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{% if adjustment.pk %}Modifier{% else %}Nouvel{% endif %} ajustement - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{% if adjustment.pk %}Modifier l'ajustement{% else %}Nouvel ajustement de taux{% endif %}</h1>
+  <p>Périmètre, mode (%, fixe) et valeur appliqués aux taux.</p>
+</div>
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-group">
+      <label>Périmètre</label>
+      <select name="scope">
+        <option value="global" {% if adjustment.scope == 'global' %}selected{% endif %}>Global</option>
+        <option value="currency" {% if adjustment.scope == 'currency' %}selected{% endif %}>Par devise</option>
+        <option value="country" {% if adjustment.scope == 'country' %}selected{% endif %}>Par pays (XOF)</option>
+        <option value="trade_type" {% if adjustment.scope == 'trade_type' %}selected{% endif %}>Par type (achat/vente)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Devise (ex: XOF, GHS)</label>
+      <input type="text" name="currency" value="{{ adjustment.currency|default:'' }}" placeholder="Optionnel">
+    </div>
+    <div class="form-group">
+      <label>Pays (ex: Bénin, Sénégal)</label>
+      <input type="text" name="country" value="{{ adjustment.country|default:'' }}" placeholder="Optionnel">
+    </div>
+    <div class="form-group">
+      <label>Type d'offre</label>
+      <select name="trade_type">
+        <option value="">—</option>
+        <option value="BUY" {% if adjustment.trade_type == 'BUY' %}selected{% endif %}>Achat</option>
+        <option value="SELL" {% if adjustment.trade_type == 'SELL' %}selected{% endif %}>Vente</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Mode</label>
+      <select name="mode">
+        <option value="percent" {% if adjustment.mode == 'percent' %}selected{% endif %}>Pourcentage (%)</option>
+        <option value="fixed" {% if adjustment.mode == 'fixed' %}selected{% endif %}>Montant fixe</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Valeur</label>
+      <input type="number" name="value" step="any" value="{{ adjustment.value|default:0 }}" required>
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" name="active" {% if adjustment.active %}checked{% endif %}> Actif</label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn">Enregistrer</button>
+      <a href="{% url 'dashboard:rate_adjustments' %}" class="btn btn-secondary">Annuler</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

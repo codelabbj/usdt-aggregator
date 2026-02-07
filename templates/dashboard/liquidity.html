@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Config liquidité - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Filtrage des offres par liquidité</h1>
+  <p>Définir la quantité minimale et maximale (en USDT) pour les offres BUY et SELL. Les offres hors de ces bornes sont exclues des réponses API.</p>
+</div>
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Min (USDT)</th>
+        <th>Max (USDT)</th>
+        <th>Actif</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in configs %}
+      <tr>
+        <td>{{ c.get_trade_type_display }}</td>
+        <td>{{ c.min_amount }}</td>
+        <td>{{ c.max_amount|default:"—" }}</td>
+        <td>{% if c.active %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
+        <td><a href="{% url 'dashboard:liquidity_edit' c.trade_type %}" class="btn btn-sm btn-secondary">Modifier</a></td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="5">Aucune config. Créez-en via les boutons ci-dessous pour BUY et SELL.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="form-actions" style="margin-top: 1rem;">
+    <a href="{% url 'dashboard:liquidity_edit' 'BUY' %}" class="btn">Config BUY</a>
+    <a href="{% url 'dashboard:liquidity_edit' 'SELL' %}" class="btn">Config SELL</a>
+  </div>
+</div>
+{% endblock %}

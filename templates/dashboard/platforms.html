@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Plateformes P2P - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Support multi-plateformes</h1>
+  <p>Binance est utilisé par défaut. La plateforme peut être choisie via le paramètre <code>platform</code> de l’API ou la config ci-dessous.</p>
+</div>
+
+<div class="card">
+  <h2>Plateformes disponibles</h2>
+  <p style="margin: 0 0 1rem 0; color: var(--text-muted);">Plateforme par défaut : <strong style="color: var(--accent);">{{ default_platform|default:"binance" }}</strong></p>
+  <ul style="list-style: none; padding: 0; margin: 0;">
+    {% for code, platform in available.items %}
+    <li style="display: flex; align-items: center; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid var(--card-border);">
+      <span style="font-weight: 600;"><code>{{ code }}</code></span>
+      <span style="color: var(--text-muted);">{{ platform.name }}</span>
+      <form method="post" action="{% url 'dashboard:platform_set_default' %}" style="margin-left: auto;">
+        {% csrf_token %}
+        <input type="hidden" name="platform_code" value="{{ code }}">
+        <button type="submit" class="btn btn-sm btn-secondary">Définir par défaut</button>
+      </form>
+    </li>
+    {% empty %}
+    <li style="padding: 0.75rem 0;">Aucune. Vérifiez que le module Binance est chargé.</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Config en base (optionnel)</h2>
+  <table>
+    <thead>
+      <tr><th>Code</th><th>Nom</th><th>Actif</th><th>Défaut</th></tr>
+    </thead>
+    <tbody>
+      {% for p in platforms_db %}
+      <tr>
+        <td><code>{{ p.code }}</code></td>
+        <td>{{ p.name }}</td>
+        <td>{% if p.active %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
+        <td>{% if p.is_default %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">Aucune entrée. Utilisez l’admin Django pour en ajouter.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div style="margin-top: 1rem;">
+    <a href="{% url 'admin:core_platformconfig_changelist' %}" class="btn btn-secondary">Gérer dans l’admin</a>
+  </div>
+</div>
+{% endblock %}

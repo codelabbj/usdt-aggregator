@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}API - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Endpoints API</h1>
+  <p>Voir et tester chaque endpoint. Les appels utilisent votre session (authentification automatique). <a href="{% url 'swagger-ui' %}" target="_blank">Ouvrir Swagger</a></p>
+</div>
+
+<div class="card api-endpoint" data-path="/api/v1/offers/" data-method="GET">
+  <h2>GET /api/v1/offers/</h2>
+  <p style="color: var(--text-muted); margin: 0 0 1rem 0;">Liste des offres P2P USDT (filtrées par liquidité, avec taux ajustés).</p>
+  <form class="api-form" onsubmit="return callApi(this)">
+    <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>fiat</label>
+        <select name="fiat" style="min-width: 100px;">
+          <option value="XOF">XOF</option>
+          <option value="GHS">GHS</option>
+          <option value="XAF">XAF</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>trade_type</label>
+        <select name="trade_type">
+          <option value="SELL">SELL</option>
+          <option value="BUY">BUY</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>country (optionnel)</label>
+        <input type="text" name="country" placeholder="ex: BJ, CI" style="min-width: 80px;">
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>platform (optionnel)</label>
+        <input type="text" name="platform" placeholder="binance" style="min-width: 100px;">
+      </div>
+      <button type="submit" class="btn">Appeler</button>
+    </div>
+    <pre class="api-response" style="margin: 0; padding: 1rem; background: #f8fafc; border-radius: var(--radius-sm); font-size: 0.85rem; min-height: 60px; border: 1px solid var(--card-border);">—</pre>
+  </form>
+</div>
+
+<div class="card api-endpoint" data-path="/api/v1/rates/usdt/" data-method="GET">
+  <h2>GET /api/v1/rates/usdt/</h2>
+  <p style="color: var(--text-muted); margin: 0 0 1rem 0;">Taux moyen USDT ↔ devise (XOF, GHS, XAF).</p>
+  <form class="api-form" onsubmit="return callApi(this)">
+    <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>fiat</label>
+        <select name="fiat" style="min-width: 100px;">
+          <option value="XOF">XOF</option>
+          <option value="GHS">GHS</option>
+          <option value="XAF">XAF</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>trade_type</label>
+        <select name="trade_type">
+          <option value="SELL">SELL</option>
+          <option value="BUY">BUY</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>country (optionnel)</label>
+        <input type="text" name="country" placeholder="BJ, CI, SN" style="min-width: 80px;">
+      </div>
+      <button type="submit" class="btn">Appeler</button>
+    </div>
+    <pre class="api-response" style="margin: 0; padding: 1rem; background: #f8fafc; border-radius: var(--radius-sm); font-size: 0.85rem; min-height: 60px; border: 1px solid var(--card-border);">—</pre>
+  </form>
+</div>
+
+<div class="card api-endpoint" data-path="/api/v1/rates/cross/" data-method="GET">
+  <h2>GET /api/v1/rates/cross/</h2>
+  <p style="color: var(--text-muted); margin: 0 0 1rem 0;">Taux croisé entre deux devises via USDT (ex. XOF → GHS).</p>
+  <form class="api-form" onsubmit="return callApi(this)">
+    <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>from_currency</label>
+        <select name="from_currency" style="min-width: 100px;">
+          <option value="XOF">XOF</option>
+          <option value="GHS">GHS</option>
+          <option value="XAF">XAF</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>to_currency</label>
+        <select name="to_currency" style="min-width: 100px;">
+          <option value="GHS">GHS</option>
+          <option value="XOF">XOF</option>
+          <option value="XAF">XAF</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>trade_type</label>
+        <select name="trade_type">
+          <option value="SELL">SELL</option>
+          <option value="BUY">BUY</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>country_from (optionnel)</label>
+        <input type="text" name="country_from" placeholder="BJ, CI" style="min-width: 80px;">
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>country_to (optionnel)</label>
+        <input type="text" name="country_to" placeholder="—" style="min-width: 80px;">
+      </div>
+      <button type="submit" class="btn">Appeler</button>
+    </div>
+    <pre class="api-response" style="margin: 0; padding: 1rem; background: #f8fafc; border-radius: var(--radius-sm); font-size: 0.85rem; min-height: 60px; border: 1px solid var(--card-border);">—</pre>
+  </form>
+</div>
+
+<div class="card api-endpoint" data-path="/api/v1/platforms/" data-method="GET">
+  <h2>GET /api/v1/platforms/</h2>
+  <p style="color: var(--text-muted); margin: 0 0 1rem 0;">Liste des plateformes P2P disponibles.</p>
+  <form class="api-form" onsubmit="return callApi(this)">
+    <div style="margin-bottom: 1rem;">
+      <button type="submit" class="btn">Appeler</button>
+    </div>
+    <pre class="api-response" style="margin: 0; padding: 1rem; background: #f8fafc; border-radius: var(--radius-sm); font-size: 0.85rem; min-height: 60px; border: 1px solid var(--card-border);">—</pre>
+  </form>
+</div>
+
+<div class="card api-endpoint" data-path="/api/v1/xof-countries/" data-method="GET">
+  <h2>GET /api/v1/xof-countries/</h2>
+  <p style="color: var(--text-muted); margin: 0 0 1rem 0;">Pays de la zone XOF (pour le paramètre country).</p>
+  <form class="api-form" onsubmit="return callApi(this)">
+    <div style="margin-bottom: 1rem;">
+      <button type="submit" class="btn">Appeler</button>
+    </div>
+    <pre class="api-response" style="margin: 0; padding: 1rem; background: #f8fafc; border-radius: var(--radius-sm); font-size: 0.85rem; min-height: 60px; border: 1px solid var(--card-border);">—</pre>
+  </form>
+</div>
+
+<div class="card api-endpoint" data-path="/api/v1/best-rates/" data-method="GET">
+  <h2>GET /api/v1/best-rates/</h2>
+  <p style="color: var(--text-muted); margin: 0 0 1rem 0;">Les 3 meilleurs taux par option (USDT/fiat, BUY/SELL, pays, plateforme). Alimenté par la commande <code>refresh_best_rates</code>.</p>
+  <form class="api-form" onsubmit="return callApi(this)">
+    <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>fiat (optionnel)</label>
+        <input type="text" name="fiat" placeholder="XOF, GHS, XAF" style="min-width: 80px;">
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>trade_type (optionnel)</label>
+        <select name="trade_type" style="min-width: 100px;">
+          <option value="">—</option>
+          <option value="SELL">SELL</option>
+          <option value="BUY">BUY</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>country (optionnel)</label>
+        <input type="text" name="country" placeholder="BJ, CI" style="min-width: 80px;">
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label>platform (optionnel)</label>
+        <input type="text" name="platform" placeholder="binance" style="min-width: 100px;">
+      </div>
+      <button type="submit" class="btn">Appeler</button>
+    </div>
+    <pre class="api-response" style="margin: 0; padding: 1rem; background: #f8fafc; border-radius: var(--radius-sm); font-size: 0.85rem; min-height: 60px; border: 1px solid var(--card-border);">—</pre>
+  </form>
+</div>
+
+<div class="card" style="background: #f8fafc; border-color: #e2e8f0;">
+  <h2>Authentification (JWT)</h2>
+  <p style="color: var(--text-muted); margin: 0 0 0.5rem 0;"><strong>POST /api/v1/auth/token/</strong> – Corps : <code>username</code>, <code>password</code>. Réponse : <code>access</code>, <code>refresh</code>.</p>
+  <p style="color: var(--text-muted); margin: 0 0 0.5rem 0;"><strong>POST /api/v1/auth/refresh/</strong> – Corps : <code>refresh</code>. Réponse : nouveau <code>access</code>.</p>
+  <p style="margin: 0;"><a href="{% url 'swagger-ui' %}" target="_blank" class="btn btn-secondary">Tester l’auth dans Swagger</a></p>
+</div>
+
+<script>
+function callApi(form) {
+  var card = form.closest('.api-endpoint');
+  var path = card.getAttribute('data-path');
+  var method = card.getAttribute('data-method') || 'GET';
+  var pre = form.querySelector('.api-response');
+
+  var params = new URLSearchParams();
+  var inputs = form.querySelectorAll('input, select');
+  inputs.forEach(function(inp) {
+    if (inp.name && inp.value.trim() !== '') params.set(inp.name, inp.value.trim());
+  });
+  var url = path + (params.toString() ? '?' + params.toString() : '');
+
+  pre.textContent = 'Chargement…';
+  fetch(url, { method: method, credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+    .then(function(r) {
+      return r.json().then(function(data) { return { ok: r.ok, status: r.status, data: data }; });
+    })
+    .then(function(result) {
+      pre.textContent = JSON.stringify(result.data, null, 2);
+      if (!result.ok) pre.style.background = '#fee2e2';
+      else pre.style.background = '#f8fafc';
+    })
+    .catch(function(err) {
+      pre.textContent = 'Erreur: ' + err.message;
+      pre.style.background = '#fee2e2';
+    });
+  return false;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,242 @@
+# Déploiement USDT Aggregator sur un serveur
+
+Guide pas à pas pour déployer l’application en production (Linux).
+
+---
+
+## 1. Prérequis sur le serveur
+
+- **OS** : Linux (Ubuntu 22.04 / Debian 12 par exemple).
+- **Python** : 3.10 ou 3.11.
+- **Optionnel** : Redis (pour le cache), Nginx (reverse proxy).
+
+```bash
+# Exemple Ubuntu/Debian
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip
+# Optionnel
+sudo apt install -y redis-server nginx
+```
+
+---
+
+## 2. Récupérer le code
+
+Cloner le dépôt ou copier les fichiers sur le serveur (ex. dans `/var/www/usdt_aggregator` ou `/home/deploy/usdt_aggregator`).
+
+```bash
+cd /var/www
+sudo git clone <url-du-repo> usdt_aggregator
+# ou scp/rsync depuis ta machine
+cd usdt_aggregator
+```
+
+---
+
+## 3. Environnement virtuel et dépendances
+
+```bash
+cd /var/www/usdt_aggregator
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+---
+
+## 4. Variables d’environnement (production)
+
+Créer un fichier `.env` à la racine du projet (ou exporter les variables dans le système / le service qui lance Gunicorn).
+
+**À faire absolument :**
+
+| Variable | Exemple | Description |
+|----------|---------|-------------|
+| `DJANGO_SECRET_KEY` | Chaîne longue aléatoire | Obligatoire en prod (générer une nouvelle clé). |
+| `DEBUG` | `0` | Mettre à `0` en production. |
+| `ALLOWED_HOSTS` | `ton-domaine.com,IP_DU_SERVEUR` | Domaines et IP autorisés, séparés par des virgules. |
+
+**Optionnel :**
+
+| Variable | Exemple | Description |
+|----------|---------|-------------|
+| `REDIS_URL` | `redis://127.0.0.1:6379/1` | Cache Redis (sinon cache mémoire). |
+| `DEFAULT_P2P_PLATFORM` | `binance` | Plateforme P2P par défaut. |
+| `TIMEZONE_DISPLAY` | `Africa/Abidjan` | Fuseau affiché. |
+| `SANDBOX_API` | `0` | `0` en prod pour les vrais taux. |
+
+Exemple `.env` minimal en prod :
+
+```bash
+# .env (ne pas commiter, ajouter à .gitignore si besoin)
+DEBUG=0
+ALLOWED_HOSTS=ton-domaine.com,123.45.67.89
+DJANGO_SECRET_KEY=genere-une-longue-cle-aleatoire-ici
+```
+
+Pour charger le `.env` automatiquement, tu peux utiliser `django-environ` dans `settings.py` ou exporter les variables avant de lancer Gunicorn (voir plus bas).
+
+---
+
+## 5. Base de données et migrations
+
+Par défaut le projet utilise **SQLite** (`db.sqlite3`). En production légère, ça suffit. Pour plus de charge, passer à **PostgreSQL** (adapter `DATABASES` dans `settings.py` et installer `psycopg2`).
+
+```bash
+source .venv/bin/activate
+cd /var/www/usdt_aggregator
+export DEBUG=0
+export ALLOWED_HOSTS=ton-domaine.com
+export DJANGO_SECRET_KEY=ta-secret-key
+
+python manage.py migrate
+python manage.py createsuperuser   # pour admin + dashboard
+```
+
+---
+
+## 6. Fichiers statiques (si tu sers les static Django)
+
+```bash
+python manage.py collectstatic --noinput
+```
+
+Le répertoire `staticfiles/` sera utilisé par Nginx (ou par WhiteNoise si tu l’ajoutes). Sans Nginx, Gunicorn ne sert pas les static en prod ; il vaut mieux un reverse proxy.
+
+---
+
+## 7. Lancer l’application avec Gunicorn
+
+Ne pas utiliser `runserver` en production. Utiliser **Gunicorn** :
+
+```bash
+source .venv/bin/activate
+cd /var/www/usdt_aggregator
+
+export DEBUG=0
+export ALLOWED_HOSTS=ton-domaine.com,127.0.0.1
+export DJANGO_SECRET_KEY=ta-secret-key
+
+gunicorn usdt_aggregator.wsgi:application --bind 0.0.0.0:8000 --workers 2
+```
+
+Pour la prod, il vaut mieux lancer Gunicorn via **systemd** (voir section 9).
+
+---
+
+## 8. Cron : refresh des best rates
+
+Pour que les meilleurs taux se mettent à jour selon l’intervalle configuré dans le dashboard :
+
+```bash
+crontab -e
+```
+
+Ajouter une ligne (adapter le chemin et le venv) :
+
+```cron
+* * * * * cd /var/www/usdt_aggregator && .venv/bin/python manage.py refresh_best_rates
+```
+
+La fréquence réelle du refresh (1, 5, 10, 15 ou 30 min) se règle dans le **Dashboard > Refresh taux** ou dans l’**admin Django**.
+
+---
+
+## 9. Service systemd (recommandé)
+
+Créer un fichier service pour que l’app tourne en permanence et redémarre après un crash.
+
+Fichier : `/etc/systemd/system/usdt-aggregator.service`
+
+```ini
+[Unit]
+Description=USDT Aggregator Gunicorn
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/usdt_aggregator
+Environment="PATH=/var/www/usdt_aggregator/.venv/bin"
+EnvironmentFile=/var/www/usdt_aggregator/.env
+ExecStart=/var/www/usdt_aggregator/.venv/bin/gunicorn usdt_aggregator.wsgi:application --bind 127.0.0.1:8000 --workers 2
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Remplacer `User`/`Group` et `WorkingDirectory` selon ton déploiement. Si tu n’as pas de `.env`, remplacer `EnvironmentFile=...` par des lignes `Environment=DEBUG=0`, etc.
+
+Puis :
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable usdt-aggregator
+sudo systemctl start usdt-aggregator
+sudo systemctl status usdt-aggregator
+```
+
+---
+
+## 10. Nginx (reverse proxy, optionnel mais recommandé)
+
+Nginx écoute sur 80/443 et envoie les requêtes à Gunicorn (port 8000). Il peut aussi servir les fichiers statiques.
+
+Exemple de configuration : `/etc/nginx/sites-available/usdt-aggregator`
+
+```nginx
+server {
+    listen 80;
+    server_name ton-domaine.com;
+
+    location /static/ {
+        alias /var/www/usdt_aggregator/staticfiles/;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Activer le site et recharger Nginx :
+
+```bash
+sudo ln -s /etc/nginx/sites-available/usdt-aggregator /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Pour HTTPS : utiliser Certbot (Let’s Encrypt) : `sudo apt install certbot python3-certbot-nginx && sudo certbot --nginx`.
+
+---
+
+## 11. Checklist récap
+
+- [ ] Code déployé sur le serveur
+- [ ] Python 3.10+ et venv, `pip install -r requirements.txt`
+- [ ] Variables d’environnement : `DEBUG=0`, `ALLOWED_HOSTS`, `DJANGO_SECRET_KEY`
+- [ ] `python manage.py migrate`
+- [ ] `python manage.py createsuperuser`
+- [ ] `python manage.py collectstatic` (si Nginx sert les static)
+- [ ] Gunicorn lancé (manuel ou via systemd)
+- [ ] Cron ajouté pour `refresh_best_rates` (toutes les 1 min)
+- [ ] (Optionnel) Nginx + HTTPS
+- [ ] Firewall : ouvrir 80, 443 (et éventuellement 22 pour SSH)
+
+---
+
+## 12. Après déploiement
+
+- **Admin** : `https://ton-domaine.com/admin/`
+- **Dashboard** : `https://ton-domaine.com/dashboard/`
+- **API** : `https://ton-domaine.com/api/v1/` (JWT ou API Key)
+- **Swagger** : `https://ton-domaine.com/api/docs/`
+
+Configurer l’intervalle de refresh dans **Dashboard > Refresh taux** (ou Admin > Config refresh best rates).

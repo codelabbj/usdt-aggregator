@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Ajustements de taux - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Ajustement des taux (markup / markdown)</h1>
+  <p>Pourcentage (%) ou montant fixe, applicable globalement, par devise, par pays (XOF) ou par type d'offre.</p>
+</div>
+<div class="card">
+  <div style="margin-bottom: 1rem;">
+    <a href="{% url 'dashboard:rate_adjustment_new' %}" class="btn">Nouvel ajustement</a>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Périmètre</th>
+        <th>Devise</th>
+        <th>Pays</th>
+        <th>Type</th>
+        <th>Mode</th>
+        <th>Valeur</th>
+        <th>Actif</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in adjustments %}
+      <tr>
+        <td>{{ a.get_scope_display }}</td>
+        <td>{{ a.currency|default:"—" }}</td>
+        <td>{{ a.country|default:"—" }}</td>
+        <td>{{ a.trade_type|default:"—" }}</td>
+        <td>{{ a.get_mode_display }}</td>
+        <td>{{ a.value }}</td>
+        <td>{% if a.active %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
+        <td><a href="{% url 'dashboard:rate_adjustment_edit' a.pk %}" class="btn btn-sm btn-secondary">Modifier</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8">Aucun ajustement.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
