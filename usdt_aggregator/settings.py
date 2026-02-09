@@ -145,3 +145,26 @@ TIMEZONE_DISPLAY = os.environ.get("TIMEZONE_DISPLAY", "Africa/Abidjan")
 
 # Mode sandbox API (réponses mock pour tests)
 SANDBOX_API = os.environ.get("SANDBOX_API", "0") == "1"
+
+# Logging : console en INFO pour voir les logs du refresh best rates
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {name} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "loggers": {
+        "core": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "offers": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "platforms": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}

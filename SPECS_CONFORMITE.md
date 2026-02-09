@@ -41,7 +41,7 @@
 | Exigence | Statut | Détail |
 |----------|--------|--------|
 | Récupérer les offres filtrées | ✅ | `GET /api/v1/offers/?fiat=&trade_type=&country=&platform=` |
-| Obtenir les taux calculés | ✅ | `GET /api/v1/rates/usdt/`, `GET /api/v1/rates/cross/` |
+| Obtenir les taux calculés | ✅ | `GET /api/v1/best-rates/`, `GET /api/v1/rates/cross/` (source : refresh périodique) |
 | Paramètres dynamiques (devise, pays, quantité, type) | ✅ | Query params sur tous les endpoints concernés ; quantité = config admin (min/max) |
 | Sécurisée (API key / JWT) | ✅ | JWT (`POST /api/v1/auth/token/`) + API Key (header `X-API-Key` ou `Authorization: ApiKey <key>`) |
 | Versionnée | ✅ | Préfixe `/api/v1/` |

@@ -1,6 +1,55 @@
 from django.db import models
 
 
+class Currency(models.Model):
+    """
+    Devise pour laquelle on agrège les offres P2P (ex. XOF, GHS, USD).
+    Créée et gérée dans l'admin. Seules les devises actives sont utilisées par le refresh des best rates.
+    """
+    code = models.CharField(max_length=10, unique=True, help_text="Code ISO (ex. XOF, GHS, USD)")
+    name = models.CharField(max_length=100, blank=True, help_text="Nom affiché (ex. Franc CFA BCEAO)")
+    active = models.BooleanField(default=True, help_text="Désactiver pour exclure du refresh des taux")
+    order = models.PositiveSmallIntegerField(default=0, help_text="Ordre d'affichage (plus petit = en premier)")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Devise"
+        verbose_name_plural = "Devises"
+        ordering = ["order", "code"]
+
+    def __str__(self):
+        return f"{self.code}" + (f" ({self.name})" if self.name else "")
+
+
+class Country(models.Model):
+    """
+    Pays associé à une devise, pour segmenter les offres (ex. Bénin pour XOF).
+    Créé et géré dans l'admin. Pour une devise sans pays, le refresh utilise uniquement le filtre "global" (tous pays).
+    """
+    code = models.CharField(max_length=10, help_text="Code ISO pays (ex. BJ, SN, CI)")
+    name = models.CharField(max_length=100, help_text="Nom du pays")
+    currency = models.ForeignKey(
+        Currency,
+        on_delete=models.CASCADE,
+        related_name="countries",
+        help_text="Devise à laquelle ce pays est rattaché",
+    )
+    active = models.BooleanField(default=True, help_text="Désactiver pour exclure du refresh")
+    order = models.PositiveSmallIntegerField(default=0, help_text="Ordre d'affichage")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Pays"
+        verbose_name_plural = "Pays"
+        ordering = ["currency", "order", "code"]
+        unique_together = [["currency", "code"]]
+
+    def __str__(self):
+        return f"{self.code} ({self.name}) — {self.currency.code}"
+
+
 class LiquidityConfig(models.Model):
     """Quantité min/max pour filtrer les offres BUY et SELL."""
 

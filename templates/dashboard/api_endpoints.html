@@ -40,36 +40,6 @@
   </form>
 </div>
 
-<div class="card api-endpoint" data-path="/api/v1/rates/usdt/" data-method="GET">
-  <h2>GET /api/v1/rates/usdt/</h2>
-  <p style="color: var(--text-muted); margin: 0 0 1rem 0;">Taux moyen USDT ↔ devise (XOF, GHS, XAF).</p>
-  <form class="api-form" onsubmit="return callApi(this)">
-    <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
-      <div class="form-group" style="margin-bottom: 0;">
-        <label>fiat</label>
-        <select name="fiat" style="min-width: 100px;">
-          <option value="XOF">XOF</option>
-          <option value="GHS">GHS</option>
-          <option value="XAF">XAF</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin-bottom: 0;">
-        <label>trade_type</label>
-        <select name="trade_type">
-          <option value="SELL">SELL</option>
-          <option value="BUY">BUY</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin-bottom: 0;">
-        <label>country (optionnel)</label>
-        <input type="text" name="country" placeholder="BJ, CI, SN" style="min-width: 80px;">
-      </div>
-      <button type="submit" class="btn">Appeler</button>
-    </div>
-    <pre class="api-response" style="margin: 0; padding: 1rem; background: #f8fafc; border-radius: var(--radius-sm); font-size: 0.85rem; min-height: 60px; border: 1px solid var(--card-border);">—</pre>
-  </form>
-</div>
-
 <div class="card api-endpoint" data-path="/api/v1/rates/cross/" data-method="GET">
   <h2>GET /api/v1/rates/cross/</h2>
   <p style="color: var(--text-muted); margin: 0 0 1rem 0;">Taux croisé entre deux devises via USDT (ex. XOF → GHS).</p>

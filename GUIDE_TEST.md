@@ -71,8 +71,8 @@ Tu reçois quelque chose comme : `{"access":"eyJ...", "refresh":"eyJ..."}`.
 curl "http://127.0.0.1:8000/api/v1/offers/?fiat=XOF&trade_type=SELL" \
   -H "Authorization: Bearer TON_TOKEN"
 
-# Taux USDT pour le XOF
-curl "http://127.0.0.1:8000/api/v1/rates/usdt/?fiat=XOF&trade_type=SELL" \
+# Meilleurs taux (XOF, SELL)
+curl "http://127.0.0.1:8000/api/v1/best-rates/?fiat=XOF&trade_type=SELL" \
   -H "Authorization: Bearer TON_TOKEN"
 
 # Taux croisé XOF → GHS
@@ -127,7 +127,7 @@ Si tu veux tester **sans appeler Binance** (données fictives) :
 1. **migrate** + **createsuperuser** + **runserver**
 2. Connexion au **dashboard** et config **Liquidité** (min/max)
 3. **Swagger** : http://127.0.0.1:8000/api/docs/ → **Authorize** avec ton JWT → tester **GET /api/v1/offers/** avec `fiat=XOF`, `trade_type=SELL`
-4. Tester **GET /api/v1/rates/usdt/** et **GET /api/v1/rates/cross/**
+4. Tester **GET /api/v1/best-rates/** et **GET /api/v1/rates/cross/**
 5. (Optionnel) **SANDBOX_API=1** pour vérifier que tout fonctionne sans réseau Binance
 
 ---

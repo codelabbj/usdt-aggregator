@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from typing import List, Dict, Any, Optional
 from django.core.cache import cache
@@ -7,6 +8,7 @@ from core.models import LiquidityConfig
 from core.majoration import apply_majoration
 from platforms.registry import get_platform, get_default_platform, init_platforms
 
+logger = logging.getLogger(__name__)
 
 CACHE_OFFERS_PREFIX = "usdt_agg_offers"
 CACHE_TTL = getattr(settings, "CACHE_OFFERS_TTL", 120)
@@ -51,18 +53,25 @@ def fetch_offers(
     init_platforms()
     platform = get_platform(platform_code or "") or get_default_platform()
     if not platform:
+        logger.warning("fetch_offers: aucune plateforme (code=%s)", platform_code or "default")
         return []
     cache_key = f"{CACHE_OFFERS_PREFIX}:{platform.code}:{asset}:{fiat}:{trade_type}:{country or 'all'}"
     if use_cache:
         cached = cache.get(cache_key)
         if cached is not None:
+            logger.debug("fetch_offers: cache hit %s %s %s %s", platform.code, fiat, country or "all", trade_type)
             offers = cached
         else:
             offers = _fetch_offers_with_fallback(platform, platform_code, asset, fiat, trade_type, country)
             cache.set(cache_key, offers, CACHE_TTL)
     else:
         offers = _fetch_offers_with_fallback(platform, platform_code, asset, fiat, trade_type, country)
+    before_liquidity = len(offers)
     offers = filter_by_liquidity(offers, trade_type)
+    logger.debug(
+        "fetch_offers: %s %s %s %s — brut=%s, après liquidité=%s",
+        platform.code, fiat, country or "all", trade_type, before_liquidity, len(offers),
+    )
     for o in offers:
         raw_price = o.get("price") or 0
         o["adjusted_price"] = apply_majoration(
@@ -83,9 +92,13 @@ def _fetch_offers_with_fallback(
                 to_try.append(p)
     for p in to_try:
         try:
+            logger.debug("fetch_offers: appel plateforme %s fiat=%s country=%s trade_type=%s", p.code, fiat, country or "all", trade_type)
             offers = p.fetch_offers(asset=asset, fiat=fiat, trade_type=trade_type, country=country)
             if offers is not None:
+                logger.info("fetch_offers: %s → %s offres", p.code, len(offers or []))
                 return offers or []
-        except Exception:
+        except Exception as e:
+            logger.warning("fetch_offers: %s a échoué — %s", p.code, e)
             continue
+    logger.warning("fetch_offers: toutes les plateformes ont échoué (fiat=%s %s)", fiat, trade_type)
     return []

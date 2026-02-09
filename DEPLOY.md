@@ -167,19 +167,25 @@ Description=USDT Aggregator Gunicorn
 After=network.target
 
 [Service]
-User=www-data
-Group=www-data
+Type=simple
+User=classified
+Group=classified
 WorkingDirectory=/var/www/usdt_aggregator
-Environment="PATH=/var/www/usdt_aggregator/.venv/bin"
+Environment=PATH=/var/www/usdt_aggregator/.venv/bin
 EnvironmentFile=/var/www/usdt_aggregator/.env
 ExecStart=/var/www/usdt_aggregator/.venv/bin/gunicorn usdt_aggregator.wsgi:application --bind 127.0.0.1:8000 --workers 2
 Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Remplacer `User`/`Group` et `WorkingDirectory` selon ton déploiement. Si tu n’as pas de `.env`, remplacer `EnvironmentFile=...` par des lignes `Environment=DEBUG=0`, etc.
+- `User=classified` / `Group=classified` : même utilisateur que le propriétaire du projet (comme ton déploiement Connect Pro). Si tu préfères faire tourner sous `www-data`, change et assure-toi que ce user a les droits sur `/var/www/usdt_aggregator` et le `.venv`.
+- `EnvironmentFile` : charge le `.env` (DEBUG, ALLOWED_HOSTS, DJANGO_SECRET_KEY, etc.) avant de lancer Gunicorn.
+- Logs : `journalctl -u usdt-aggregator -f` pour suivre en direct.
 
 Puis :
 
@@ -194,38 +200,109 @@ sudo systemctl status usdt-aggregator
 
 ## 10. Nginx (reverse proxy, optionnel mais recommandé)
 
-Nginx écoute sur 80/443 et envoie les requêtes à Gunicorn (port 8000). Il peut aussi servir les fichiers statiques.
+Nginx écoute sur 80/443 et envoie les requêtes à Gunicorn (port 8000). Même style que ton déploiement Connect Pro (favicon, cache static, HTTPS avec Certbot).
 
-Exemple de configuration : `/etc/nginx/sites-available/usdt-aggregator`
+Fichier : `/etc/nginx/sites-available/usdt-aggregator`
+
+**Sans HTTPS (pour tester d’abord) :**
 
 ```nginx
 server {
     listen 80;
     server_name exchange.pals.africa;
 
+    client_max_body_size 100M;
+
+    location = /favicon.ico {
+        access_log off;
+        log_not_found off;
+    }
+
     location /static/ {
         alias /var/www/usdt_aggregator/staticfiles/;
+        expires 30d;
+        add_header Pragma public;
+        add_header Cache-Control "public";
     }
 
     location / {
+        include proxy_params;
         proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-Activer le site et recharger Nginx :
+**Étapes à suivre :**
 
-```bash
-sudo ln -s /etc/nginx/sites-available/usdt-aggregator /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
+1. **Créer le fichier** (avec sudo) :  
+   `sudo nano /etc/nginx/sites-available/usdt-aggregator`  
+   Colle le bloc `server { ... }` ci‑dessus, sauvegarde (Ctrl+O, Entrée, Ctrl+X).
+
+2. **Activer le site et recharger Nginx :**
+   ```bash
+   sudo ln -s /etc/nginx/sites-available/usdt-aggregator /etc/nginx/sites-enabled/
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+
+3. **Tester en HTTP** : ouvre `http://exchange.pals.africa` dans le navigateur (admin, dashboard, API). Vérifie que le DNS pointe bien vers ton serveur (82.29.179.215).
+
+4. **Activer HTTPS avec Certbot** (quand le site répond correctement en HTTP) :
+   ```bash
+   sudo apt update
+   sudo apt install certbot python3-certbot-nginx
+   sudo certbot --nginx -d exchange.pals.africa
+   ```
+   - Certbot te demandera une adresse e‑mail (pour rappels de renouvellement).
+   - Il te proposera d’accepter les conditions d’utilisation : oui.
+   - Il modifiera lui‑même le fichier Nginx pour ajouter le SSL (certificat Let’s Encrypt) et la redirection HTTP → HTTPS.
+   - À la fin, recharge Nginx si ce n’est pas fait automatiquement.
+
+5. **Vérifier** : ouvre `https://exchange.pals.africa`. Tu dois avoir le cadenas et la redirection depuis `http://` vers `https://`.
+
+**Après Certbot (HTTPS), ta config ressemblera à ceci :**
+
+```nginx
+server {
+    server_name exchange.pals.africa;
+
+    client_max_body_size 100M;
+
+    location = /favicon.ico {
+        access_log off;
+        log_not_found off;
+    }
+
+    location /static/ {
+        alias /var/www/usdt_aggregator/staticfiles/;
+        expires 30d;
+        add_header Pragma public;
+        add_header Cache-Control "public";
+    }
+
+    location / {
+        include proxy_params;
+        proxy_pass http://127.0.0.1:8000;
+    }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/exchange.pals.africa/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/exchange.pals.africa/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+server {
+    if ($host = exchange.pals.africa) {
+        return 301 https://$host$request_uri;
+    }
+
+    server_name exchange.pals.africa;
+    listen 80;
+    return 404;
+}
 ```
 
-Pour HTTPS : utiliser Certbot (Let’s Encrypt) : `sudo apt install certbot python3-certbot-nginx && sudo certbot --nginx`.
+(Rappel : activer le site et Certbot sont détaillés dans les **Étapes à suivre** ci‑dessus.)
 
 ---
 

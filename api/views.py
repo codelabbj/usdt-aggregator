@@ -11,13 +11,12 @@ from drf_spectacular.utils import (
     inline_serializer,
 )
 
-from core.constants import XOF_COUNTRIES
-from core.models import BestRate
+from core.models import BestRate, Currency, Country
 from core.majoration import apply_majoration
 from offers.services import fetch_offers
-from rates.services import get_usdt_rate, compute_cross_rate
+from rates.services import compute_cross_rate
 from platforms.registry import get_all_platforms, init_platforms
-from platforms.binance import fetch_binance_p2p_raw
+from platforms.binance import fetch_binance_p2p_raw_all_pages
 
 SANDBOX_API = getattr(settings, "SANDBOX_API", False)
 
@@ -27,12 +26,6 @@ def _sandbox_offers(fiat, trade_type, country):
         return [
             {"platform": "sandbox", "price": 600 if fiat == "XOF" else 12.5, "min_amount": 10, "max_amount": 5000, "adjusted_price": 610},
         ]
-    return None
-
-
-def _sandbox_usdt_rate(fiat, trade_type):
-    if SANDBOX_API:
-        return 600.0 if fiat == "XOF" else 12.45 if fiat == "GHS" else 600.0
     return None
 
 
@@ -75,16 +68,6 @@ _CrossRateResponseSerializer = inline_serializer(
         "sandbox": serializers.BooleanField(),
     },
 )
-_UsdtRateResponseSerializer = inline_serializer(
-    "UsdtRateResponse",
-    fields={
-        "fiat": serializers.CharField(),
-        "trade_type": serializers.CharField(),
-        "country": serializers.CharField(allow_null=True, required=False),
-        "rate": serializers.FloatField(),
-        "sandbox": serializers.BooleanField(),
-    },
-)
 _ErrorResponseSerializer = inline_serializer(
     "ErrorResponse",
     fields={"error": serializers.CharField()},
@@ -101,9 +84,24 @@ _CountryItemSerializer = inline_serializer(
     "CountryItem",
     fields={"code": serializers.CharField(), "name": serializers.CharField()},
 )
+_CountryWithFiatItemSerializer = inline_serializer(
+    "CountryWithFiatItem",
+    fields={
+        "code": serializers.CharField(),
+        "name": serializers.CharField(),
+        "fiat": serializers.CharField(),
+    },
+)
 _XofCountriesResponseSerializer = inline_serializer(
     "XofCountriesResponse",
     fields={"countries": serializers.ListField(child=_CountryItemSerializer)},
+)
+_CurrenciesItemSerializer = inline_serializer(
+    "CurrencyItem",
+    fields={
+        "code": serializers.CharField(),
+        "name": serializers.CharField(),
+    },
 )
 _BestRateItemSerializer = inline_serializer(
     "BestRateItem",
@@ -123,7 +121,7 @@ _BestRatesResponseSerializer = inline_serializer(
 )
 _CurrenciesResponseSerializer = inline_serializer(
     "CurrenciesResponse",
-    fields={"currencies": serializers.ListField(child=serializers.CharField())},
+    fields={"currencies": serializers.ListField(child=_CurrenciesItemSerializer)},
 )
 
 
@@ -205,42 +203,30 @@ def offers_list(request):
 
 
 @extend_schema(
-    summary="Offres Binance P2P (réponse brute)",
-    description="Appel direct à l’API Binance P2P. Retourne exactement la réponse JSON de Binance (code, data avec adv, advertisers, etc.).",
+    summary="Offres Binance P2P (réponse brute, toutes pages)",
+    description="Récupère toutes les pages Binance P2P, agrège et trie par meilleur prix. Format identique à Binance (code, data, total, success). Pas de paramètres page/rows.",
     parameters=[
         OpenApiParameter("fiat", str, default="XOF", description="Devise (XOF, GHS, etc.)"),
         OpenApiParameter("trade_type", str, default="SELL", description="BUY ou SELL"),
         OpenApiParameter("country", str, required=False, description="Code pays (ex. BJ, CI)"),
-        OpenApiParameter("page", int, default=1, description="Numéro de page"),
-        OpenApiParameter("rows", int, default=20, description="Nombre d’offres par page"),
     ],
-    responses={200: OpenApiResponse(description="Réponse brute Binance (code, data, total, ...)")},
+    responses={200: OpenApiResponse(description="Réponse brute Binance (code, data triée par meilleur prix, total, ...)")},
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def offers_binance_raw(request):
-    """Retourne les offres telles qu’elles viennent de l’API Binance P2P (sans normalisation)."""
+    """Retourne toutes les offres Binance P2P (toutes pages), triées par meilleur prix."""
     fiat = request.query_params.get("fiat", "XOF")
     trade_type = request.query_params.get("trade_type", "SELL").upper()
     if trade_type not in ("BUY", "SELL"):
         trade_type = "SELL"
     country = request.query_params.get("country") or None
     try:
-        page = int(request.query_params.get("page", 1))
-    except (TypeError, ValueError):
-        page = 1
-    try:
-        rows = int(request.query_params.get("rows", 20))
-    except (TypeError, ValueError):
-        rows = 20
-    try:
-        data = fetch_binance_p2p_raw(
+        data = fetch_binance_p2p_raw_all_pages(
             asset="USDT",
             fiat=fiat,
             trade_type=trade_type,
             country=country,
-            page=page,
-            rows=rows,
         )
     except Exception as e:
         return Response(
@@ -293,46 +279,6 @@ def cross_rate(request):
 
 
 @extend_schema(
-    parameters=[
-        OpenApiParameter("fiat", str, description="XOF, GHS, XAF"),
-        OpenApiParameter("trade_type", str, required=False),
-        OpenApiParameter("country", str, required=False, description="Code pays (ex. BJ, CI). Vide = tous les pays."),
-    ],
-    responses={
-        200: _UsdtRateResponseSerializer,
-        404: OpenApiResponse(response=_ErrorResponseSerializer, description="Taux non disponible"),
-    },
-    examples=[
-        OpenApiExample(
-            "Taux USDT/XOF",
-            value={
-                "fiat": "XOF",
-                "trade_type": "SELL",
-                "country": None,
-                "rate": 600.5,
-                "sandbox": False,
-            },
-            response_only=True,
-        ),
-    ],
-)
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def usdt_rate(request):
-    fiat = request.query_params.get("fiat", "XOF")
-    trade_type = request.query_params.get("trade_type", "SELL").upper()
-    country = request.query_params.get("country") or None
-    if SANDBOX_API:
-        rate = _sandbox_usdt_rate(fiat, trade_type)
-    else:
-        rate = get_usdt_rate(fiat, trade_type, country=country)
-    if rate is None:
-        return Response({"error": "Taux non disponible"}, status=status.HTTP_404_NOT_FOUND)
-    rate = apply_majoration(rate, fiat, trade_type, country or "")
-    return Response({"fiat": fiat, "trade_type": trade_type, "country": country, "rate": rate, "sandbox": SANDBOX_API})
-
-
-@extend_schema(
     responses={200: _PlatformsResponseSerializer},
     examples=[
         OpenApiExample(
@@ -355,40 +301,59 @@ def platforms_list(request):
         OpenApiParameter("trade_type", str, required=False, description="BUY ou SELL : ne retourner que les devises ayant un taux pour ce type"),
     ],
     responses={200: _CurrenciesResponseSerializer},
-    description="Liste des devises pour lesquelles un taux USDT est disponible (source : best rates). Optionnellement filtré par trade_type.",
+    description="Liste des devises gérées (source : admin Core > Devises). Optionnellement filtré par trade_type (devises ayant au moins un best rate).",
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def rates_currencies_list(request):
     trade_type = request.query_params.get("trade_type")
-    qs = BestRate.objects.values_list("fiat", flat=True).distinct()
+    qs = Currency.objects.filter(active=True).order_by("order", "code")
     if trade_type:
-        qs = BestRate.objects.filter(trade_type=trade_type.upper()).values_list("fiat", flat=True).distinct()
-    currencies = sorted(set(qs))
+        fiat_with_rate = set(
+            BestRate.objects.filter(trade_type=trade_type.upper())
+            .values_list("fiat", flat=True)
+            .distinct()
+        )
+        qs = qs.filter(code__in=fiat_with_rate)
+    currencies = [{"code": c.code, "name": c.name or ""} for c in qs]
     return Response({"currencies": currencies})
 
 
 @extend_schema(
-    description="Pays zone XOF pour segmentation des offres (paramètre country).",
-    responses={200: _XofCountriesResponseSerializer},
-    examples=[
-        OpenApiExample(
-            "Pays XOF",
-            value={
-                "countries": [
-                    {"code": "BJ", "name": "Bénin"},
-                    {"code": "CI", "name": "Côte d'Ivoire"},
-                    {"code": "SN", "name": "Sénégal"},
-                ]
-            },
-            response_only=True,
-        ),
+    parameters=[
+        OpenApiParameter("fiat", str, required=False, description="Code devise (ex. XOF, GHS). Si absent : tous les pays avec leur devise."),
     ],
+    description="Pays gérés (source : admin Core > Pays). Avec fiat : pays de cette devise. Sans fiat : tous les pays avec champ fiat.",
+    responses={
+        200: OpenApiResponse(
+            description="Liste de pays (code, name et optionnellement fiat)",
+        ),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def countries_list(request):
+    """Pays gérés par devise. ?fiat=XOF → pays XOF. Sans param → tous les pays avec fiat."""
+    fiat = request.query_params.get("fiat", "").strip().upper()
+    if fiat:
+        countries = Country.objects.filter(currency__code=fiat, active=True).order_by("order", "code")
+        return Response({"countries": [{"code": c.code, "name": c.name} for c in countries]})
+    countries = Country.objects.filter(active=True).select_related("currency").order_by("currency__order", "currency__code", "order", "code")
+    return Response({
+        "countries": [{"code": c.code, "name": c.name, "fiat": c.currency.code} for c in countries]
+    })
+
+
+@extend_schema(
+    description="Pays zone XOF (équivalent à GET /countries/?fiat=XOF). Conservé pour compatibilité.",
+    responses={200: _XofCountriesResponseSerializer},
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def xof_countries_list(request):
-    return Response({"countries": [{"code": c[0], "name": c[1]} for c in XOF_COUNTRIES]})
+    """Pays zone XOF (source : admin Core > Pays, devise XOF)."""
+    countries = Country.objects.filter(currency__code="XOF", active=True).order_by("order", "code")
+    return Response({"countries": [{"code": c.code, "name": c.name} for c in countries]})
 
 
 @extend_schema(

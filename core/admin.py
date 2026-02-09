@@ -1,6 +1,47 @@
 from django.utils import timezone
 from django.contrib import admin
-from .models import LiquidityConfig, RateAdjustment, PlatformConfig, APIKey, APIKeyUsage, BillingConfig, BestRatesRefreshConfig, BestRate
+from .models import (
+    Currency,
+    Country,
+    LiquidityConfig,
+    RateAdjustment,
+    PlatformConfig,
+    APIKey,
+    APIKeyUsage,
+    BillingConfig,
+    BestRatesRefreshConfig,
+    BestRate,
+)
+
+
+class CountryInline(admin.TabularInline):
+    model = Country
+    extra = 0
+    fields = ("code", "name", "active", "order")
+    ordering = ("order", "code")
+
+
+@admin.register(Currency)
+class CurrencyAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "active", "order", "countries_count")
+    list_filter = ("active",)
+    list_editable = ("active", "order")
+    ordering = ("order", "code")
+    inlines = [CountryInline]
+    search_fields = ("code", "name")
+
+    def countries_count(self, obj):
+        return obj.countries.filter(active=True).count()
+    countries_count.short_description = "Pays actifs"
+
+
+@admin.register(Country)
+class CountryAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "currency", "active", "order")
+    list_filter = ("currency", "active")
+    list_editable = ("active", "order")
+    ordering = ("currency", "order", "code")
+    search_fields = ("code", "name")
 
 
 @admin.register(LiquidityConfig)

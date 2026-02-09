@@ -33,8 +33,8 @@ python manage.py runserver
 
 - Authentification : JWT via `POST /api/v1/auth/token/` (username + password) puis `Authorization: Bearer <token>`.
 - **GET /api/v1/offers/** – Offres filtrées (query: `fiat`, `trade_type`, `country`, `platform`).
-- **GET /api/v1/rates/usdt/** – Taux USDT pour une devise (query: `fiat`, `trade_type`).
-- **GET /api/v1/rates/cross/** – Taux croisé (query: `from_currency`, `to_currency`, `trade_type`).
+- **GET /api/v1/best-rates/** – Meilleurs taux USDT/fiat (alimenté par le refresh périodique ; query: `fiat`, `trade_type`, `country`).
+- **GET /api/v1/rates/cross/** – Taux croisé (query: `from_currency`, `to_currency` ; utilise les best rates).
 - **GET /api/v1/platforms/** – Liste des plateformes.
 
 ## Spécifications couvertes
