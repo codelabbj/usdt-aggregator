@@ -207,6 +207,7 @@ class BinanceP2PPlatform(BaseP2PPlatform):
             return [], {}, 0
 
     def _normalize_offers(self, adv_list: List, advertisers: dict) -> List[Dict[str, Any]]:
+        """Normalise les annonces Binance : min/max fiat uniquement (Binance: minSingleTransAmount, maxSingleTransAmount / dynamicMaxSingleTransAmount)."""
         result = []
         for adv in adv_list or []:
             if not isinstance(adv, dict):
@@ -215,18 +216,38 @@ class BinanceP2PPlatform(BaseP2PPlatform):
             user = advertisers.get(str(adv.get("advertiserNo") or adv.get("userId") or ""), {})
             if isinstance(user, list):
                 user = user[0] if user else {}
-            min_single = float(adv.get("minSingleTransAmount") or adv.get("minTradeAmount") or 0)
-            max_single = float(adv.get("maxSingleTransAmount") or adv.get("maxTradeAmount") or 0)
+            min_fiat = float(adv.get("minSingleTransAmount") or adv.get("minTradeAmount") or 0)
+            max_fiat = float(adv.get("dynamicMaxSingleTransAmount") or adv.get("maxSingleTransAmount") or adv.get("maxTradeAmount") or 0)
+            min_usdt = float(adv.get("minSingleTransQuantity") or 0)
+            max_usdt = float(adv.get("dynamicMaxSingleTransQuantity") or adv.get("maxSingleTransQuantity") or 0)
             price = float(adv.get("price") or 0)
+            trade_methods = adv.get("tradeMethods") or []
+            if trade_methods and isinstance(trade_methods[0], dict):
+                payment_methods = [
+                    {"identifier": m.get("identifier") or m.get("payType"), "name": m.get("tradeMethodName") or m.get("identifier") or ""}
+                    for m in trade_methods
+                ]
+            else:
+                payment_methods = [{"identifier": str(x), "name": str(x)} for x in trade_methods] if trade_methods else []
             result.append({
                 "platform": self.code,
                 "offer_id": str(adv_id or ""),
                 "trade_type": adv.get("tradeType") or "SELL",
                 "price": price,
-                "min_amount": min_single,
-                "max_amount": max_single,
-                "available_amount": max_single,
-                "payment_methods": adv.get("tradeMethods") or [],
+                "min_fiat": min_fiat,
+                "max_fiat": max_fiat,
+                "min_usdt": min_usdt,
+                "max_usdt": max_usdt,
+                "advertiser": {
+                    "user_no": user.get("userNo"),
+                    "nick_name": user.get("nickName"),
+                    "month_order_count": user.get("monthOrderCount"),
+                    "month_finish_rate": user.get("monthFinishRate"),
+                    "positive_rate": user.get("positiveRate"),
+                    "user_type": user.get("userType"),
+                    "user_grade": user.get("userGrade"),
+                },
+                "payment_methods": payment_methods,
                 "merchant": bool(adv.get("merchant") or user.get("isMerchant")),
                 "raw": adv,
             })

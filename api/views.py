@@ -1,3 +1,11 @@
+"""
+API v1 : 4 endpoints retenus (+ auth).
+
+1. GET /api/v1/offers/          — Offres (params: fiat, trade_type, country). Retourne prix, min_fiat, max_fiat, annonceur, moyens de paiement.
+2. GET /api/v1/rates/cross/      — Taux croisé from → to via USDT + meilleures offres chaque côté (min/max, annonceur, paiement).
+3. GET /api/v1/countries/       — Liste des pays (param fiat optionnel).
+4. GET /api/v1/currencies/      — Liste des devises.
+"""
 from django.conf import settings
 from rest_framework import status, serializers
 from rest_framework.decorators import api_view, permission_classes
@@ -12,20 +20,23 @@ from drf_spectacular.utils import (
 )
 
 from core.models import BestRate, Currency, Country
-from core.majoration import apply_majoration
-from offers.services import fetch_offers
-from rates.services import compute_cross_rate
-from platforms.registry import get_all_platforms, init_platforms
-from platforms.binance import fetch_binance_p2p_raw_all_pages
+from core.majoration import apply_majoration, apply_cross_adjustment
+from offers.services import fetch_offers, fetch_offers_raw, get_offers_from_snapshot
 
 SANDBOX_API = getattr(settings, "SANDBOX_API", False)
 
 
 def _sandbox_offers(fiat, trade_type, country):
     if SANDBOX_API:
-        return [
-            {"platform": "sandbox", "price": 600 if fiat == "XOF" else 12.5, "min_amount": 10, "max_amount": 5000, "adjusted_price": 610},
-        ]
+        p = 600 if fiat == "XOF" else 12.5
+        return [{
+            "platform": "sandbox", "price": p, "adjusted_price": p,
+            "min_fiat": 3000, "max_fiat": 500000,
+            "fiat": fiat, "trade_type": trade_type,
+            "advertiser": {"nick_name": "Sandbox", "user_type": "user"},
+            "payment_methods": [{"identifier": "MTNMobileMoney", "name": "MTN Mobile Money"}],
+            "offer_id": "sandbox-1",
+        }]
     return None
 
 
@@ -43,9 +54,8 @@ _OfferItemSerializer = inline_serializer(
         "offer_id": serializers.CharField(required=False),
         "trade_type": serializers.CharField(),
         "price": serializers.FloatField(),
-        "min_amount": serializers.FloatField(),
-        "max_amount": serializers.FloatField(),
-        "available_amount": serializers.FloatField(required=False),
+        "min_fiat": serializers.FloatField(),
+        "max_fiat": serializers.FloatField(),
         "adjusted_price": serializers.FloatField(),
         "payment_methods": serializers.ListField(child=serializers.CharField(), required=False),
         "merchant": serializers.BooleanField(required=False),
@@ -55,8 +65,9 @@ _OffersResponseSerializer = inline_serializer(
     "OffersResponse",
     fields={
         "count": serializers.IntegerField(),
+        "page": serializers.IntegerField(),
+        "page_size": serializers.IntegerField(),
         "offers": serializers.ListField(child=_OfferItemSerializer),
-        "sandbox": serializers.BooleanField(),
     },
 )
 _CrossRateResponseSerializer = inline_serializer(
@@ -136,184 +147,324 @@ _CurrenciesResponseSerializer = inline_serializer(
     },
     examples=[
         OpenApiExample(
-            "10 meilleures offres (épurées)",
+            "Offres paginées",
             value={
                 "count": 1,
+                "page": 1,
+                "page_size": 20,
                 "offers": [
                     {
                         "platform": "binance",
                         "offer_id": "12345",
                         "trade_type": "BUY",
                         "price": 567.13,
-                        "min_amount": 3000,
-                        "max_amount": 300000,
-                        "available_amount": 300000,
+                        "min_fiat": 3000,
+                        "max_fiat": 300000,
                         "adjusted_price": 567.13,
                         "payment_methods": ["MTNMobileMoney", "OrangeMoney"],
                         "merchant": False,
                     },
                 ],
-                "sandbox": False,
             },
             response_only=True,
         ),
     ],
 )
-def _clean_offer(o):
-    """Épure une offre pour la réponse API : pas de raw, payment_methods en noms simples."""
-    pm = o.get("payment_methods") or []
-    if isinstance(pm, list) and pm and isinstance(pm[0], dict):
-        payment_names = [
-            str(m.get("payType") or m.get("identifier") or m.get("tradeMethodName") or "")
-            for m in pm
-        ]
-    else:
-        payment_names = [str(p) for p in pm] if pm else []
+def _format_offer_for_api(o: dict, country: str = None) -> dict:
+    """Formate une offre pour l'API : price (brut), adjusted_price (après règle d'ajustement), min_fiat, max_fiat, annonceur, moyens de paiement."""
     return {
-        "platform": o.get("platform"),
-        "offer_id": o.get("offer_id"),
-        "trade_type": o.get("trade_type"),
         "price": o.get("price"),
-        "min_amount": o.get("min_amount"),
-        "max_amount": o.get("max_amount"),
-        "available_amount": o.get("available_amount"),
-        "adjusted_price": o.get("adjusted_price"),
-        "payment_methods": payment_names,
-        "merchant": o.get("merchant", False),
+        "adjusted_price": o.get("adjusted_price") or o.get("price"),
+        "country": country or o.get("country"),
+        "fiat": o.get("fiat"),
+        "trade_type": o.get("trade_type"),
+        "min_fiat": o.get("min_fiat"),
+        "max_fiat": o.get("max_fiat"),
+        "advertiser": o.get("advertiser"),
+        "payment_methods": o.get("payment_methods"),
+        "offer_id": o.get("offer_id"),
+        "platform": o.get("platform"),
     }
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def offers_list(request):
-    fiat = request.query_params.get("fiat", "XOF")
-    trade_type = request.query_params.get("trade_type", "SELL").upper()
-    if trade_type not in ("BUY", "SELL"):
-        trade_type = "SELL"
-    platform = request.query_params.get("platform") or None
-    if SANDBOX_API:
-        data = _sandbox_offers(fiat, trade_type, None) or []
-    else:
-        data = fetch_offers(asset="USDT", fiat=fiat, trade_type=trade_type, country=None, platform_code=platform)
-    # Meilleures offres : BUY = prix le plus bas d'abord, SELL = prix le plus haut d'abord
-    data = sorted(data, key=lambda x: (x.get("adjusted_price") or x.get("price") or 0), reverse=(trade_type == "SELL"))
-    data = data[:10]
-    offers_clean = [_clean_offer(o) for o in data]
-    return Response({"count": len(offers_clean), "offers": offers_clean, "sandbox": SANDBOX_API})
-
-
+# ---------------------------------------------------------------------------
+# API 1 : Offres (fiat, trade_type, country) — toutes les offres, format épuré
+# ---------------------------------------------------------------------------
 @extend_schema(
-    summary="Offres Binance P2P (réponse brute, toutes pages)",
-    description="Récupère toutes les pages Binance P2P, agrège et trie par meilleur prix. Format identique à Binance (code, data, total, success). Pas de paramètres page/rows.",
     parameters=[
-        OpenApiParameter("fiat", str, default="XOF", description="Devise (XOF, GHS, etc.)"),
-        OpenApiParameter("trade_type", str, default="SELL", description="BUY ou SELL"),
-        OpenApiParameter("country", str, required=False, description="Code pays (ex. BJ, CI)"),
+        OpenApiParameter("fiat", str, description="Devise (XOF, GHS, etc.)"),
+        OpenApiParameter("trade_type", str, description="BUY ou SELL"),
+        OpenApiParameter("country", str, required=False, description="Code pays (ex. BJ, CI). Vide = tous les pays."),
+        OpenApiParameter("page", int, required=False, description="Numéro de page (défaut 1)."),
+        OpenApiParameter("page_size", int, required=False, description="Nombre d'offres par page (défaut 20, max 100)."),
     ],
-    responses={200: OpenApiResponse(description="Réponse brute Binance (code, data triée par meilleur prix, total, ...)")},
+    description="Récupère les offres selon fiat, trade_type et pays. Réponse paginée : count, page, page_size, offers.",
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def offers_binance_raw(request):
-    """Retourne toutes les offres Binance P2P (toutes pages), triées par meilleur prix."""
-    fiat = request.query_params.get("fiat", "XOF")
+def offers_list(request):
+    fiat = request.query_params.get("fiat", "XOF").strip().upper()
     trade_type = request.query_params.get("trade_type", "SELL").upper()
     if trade_type not in ("BUY", "SELL"):
         trade_type = "SELL"
     country = request.query_params.get("country") or None
     try:
-        data = fetch_binance_p2p_raw_all_pages(
-            asset="USDT",
-            fiat=fiat,
-            trade_type=trade_type,
-            country=country,
-        )
-    except Exception as e:
-        return Response(
-            {"error": "Binance P2P indisponible", "detail": str(e)},
-            status=status.HTTP_502_BAD_GATEWAY,
-        )
-    return Response(data)
+        page = max(1, int(request.query_params.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
+    except (TypeError, ValueError):
+        page_size = 20
+    if SANDBOX_API:
+        data = _sandbox_offers(fiat, trade_type, country) or []
+    else:
+        data = fetch_offers(asset="USDT", fiat=fiat, trade_type=trade_type, country=country, platform_code=None)
+    for o in data:
+        o.setdefault("fiat", fiat)
+    data = sorted(data, key=lambda x: (x.get("adjusted_price") or x.get("price") or 0), reverse=(trade_type == "SELL"))
+    offers_clean = [_format_offer_for_api(o, country) for o in data]
+    total = len(offers_clean)
+    start = (page - 1) * page_size
+    end = start + page_size
+    offers_page = offers_clean[start:end]
+    return Response({
+        "count": total,
+        "page": page,
+        "page_size": page_size,
+        "offers": offers_page,
+    })
 
 
+# ---------------------------------------------------------------------------
+# API 1a : Offres — même logique que offers_list, réponse = uniquement les prix ajustés
+# ---------------------------------------------------------------------------
+@extend_schema(
+    parameters=[
+        OpenApiParameter("fiat", str, description="Devise (XOF, GHS, etc.)"),
+        OpenApiParameter("trade_type", str, description="BUY ou SELL"),
+        OpenApiParameter("country", str, required=False, description="Code pays (ex. BJ, CI). Vide = tous les pays."),
+        OpenApiParameter("page", int, required=False, description="Numéro de page (défaut 1)."),
+        OpenApiParameter("page_size", int, required=False, description="Nombre d'offres par page (défaut 20, max 100)."),
+    ],
+    description="Même paramètres et pagination que GET /offers/. Retourne uniquement la liste des prix ajustés (même ordre que les offres).",
+    responses={
+        200: inline_serializer(
+            "OffersPricesResponse",
+            fields={
+                "count": serializers.IntegerField(),
+                "page": serializers.IntegerField(),
+                "page_size": serializers.IntegerField(),
+                "adjusted_prices": serializers.ListField(child=serializers.FloatField()),
+            },
+        ),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def offers_list_prices(request):
+    """Même logique que offers_list, mais la réponse ne contient que les prix ajustés (liste de floats)."""
+    fiat = request.query_params.get("fiat", "XOF").strip().upper()
+    trade_type = request.query_params.get("trade_type", "SELL").upper()
+    if trade_type not in ("BUY", "SELL"):
+        trade_type = "SELL"
+    country = request.query_params.get("country") or None
+    try:
+        page = max(1, int(request.query_params.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
+    except (TypeError, ValueError):
+        page_size = 20
+    if SANDBOX_API:
+        data = _sandbox_offers(fiat, trade_type, country) or []
+    else:
+        data = fetch_offers(asset="USDT", fiat=fiat, trade_type=trade_type, country=country, platform_code=None)
+    for o in data:
+        o.setdefault("fiat", fiat)
+    data = sorted(data, key=lambda x: (x.get("adjusted_price") or x.get("price") or 0), reverse=(trade_type == "SELL"))
+    adjusted_prices = [float(o.get("adjusted_price") or o.get("price") or 0) for o in data]
+    total = len(adjusted_prices)
+    start = (page - 1) * page_size
+    end = start + page_size
+    prices_page = adjusted_prices[start:end]
+    return Response({
+        "count": total,
+        "page": page,
+        "page_size": page_size,
+        "adjusted_prices": prices_page,
+    })
+
+
+# ---------------------------------------------------------------------------
+# API 1b : Meilleures offres (top N, pas de pagination)
+# ---------------------------------------------------------------------------
+@extend_schema(
+    parameters=[
+        OpenApiParameter("fiat", str, description="Devise (XOF, GHS, etc.)"),
+        OpenApiParameter("trade_type", str, description="BUY ou SELL"),
+        OpenApiParameter("country", str, required=False, description="Code pays (ex. BJ, CI). Vide = tous les pays."),
+        OpenApiParameter("limit", int, required=False, description="Nombre de meilleures offres à retourner (défaut 3, max 50)."),
+    ],
+    description="Retourne les N meilleures offres (tri par meilleur prix). Par défaut les 3 meilleures.",
+    responses={200: _OffersResponseSerializer},
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def offers_best(request):
+    fiat = request.query_params.get("fiat", "XOF").strip().upper()
+    trade_type = request.query_params.get("trade_type", "SELL").upper()
+    if trade_type not in ("BUY", "SELL"):
+        trade_type = "SELL"
+    country = request.query_params.get("country") or None
+    try:
+        limit = min(50, max(1, int(request.query_params.get("limit", 3))))
+    except (TypeError, ValueError):
+        limit = 3
+    if SANDBOX_API:
+        data = _sandbox_offers(fiat, trade_type, country) or []
+    else:
+        data = fetch_offers(asset="USDT", fiat=fiat, trade_type=trade_type, country=country, platform_code=None)
+    for o in data:
+        o.setdefault("fiat", fiat)
+    data = sorted(data, key=lambda x: (x.get("adjusted_price") or x.get("price") or 0), reverse=(trade_type == "SELL"))
+    offers_clean = [_format_offer_for_api(o, country) for o in data]
+    offers_top = offers_clean[:limit]
+    return Response({
+        "count": len(offers_top),
+        "page": 1,
+        "page_size": len(offers_top),
+        "offers": offers_top,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Endpoints commentés (hors scope des 4 APIs retenues)
+# ---------------------------------------------------------------------------
+# @extend_schema(...)
+# @api_view(["GET"])
+# @permission_classes([IsAuthenticated])
+# def offers_binance_raw(request):
+#     """Réponse brute Binance P2P (toutes pages). Désactivé."""
+#     ...
+
+
+# ---------------------------------------------------------------------------
+# API 2 : Taux croisé (from → to via USDT) + meilleures offres chaque côté (min/max, annonceur, paiement)
+# ---------------------------------------------------------------------------
 @extend_schema(
     parameters=[
         OpenApiParameter("from_currency", str, description="Devise source (ex. XOF)"),
         OpenApiParameter("to_currency", str, description="Devise cible (ex. GHS)"),
-        OpenApiParameter("country_from", str, required=False, description="Pays devise source (ex. BJ, CI). Vide = tous les pays."),
+        OpenApiParameter("country_from", str, required=False, description="Pays devise source. Vide = tous les pays."),
         OpenApiParameter("country_to", str, required=False, description="Pays devise cible. Vide = tous les pays."),
     ],
-    responses={
-        200: _CrossRateResponseSerializer,
-        404: OpenApiResponse(response=_ErrorResponseSerializer, description="Taux non disponible"),
-    },
-    description="Taux croisé from → to via USDT. Parcours réel : meilleur BUY pour la source, meilleur SELL pour la cible. rate = 1 from_currency = X to_currency. Sans pays = tous les pays.",
-    examples=[
-        OpenApiExample(
-            "Taux croisé XOF → GHS",
-            value={
-                "from_currency": "XOF",
-                "to_currency": "GHS",
-                "rate": 0.02193,
-                "sandbox": False,
-            },
-            response_only=True,
-        ),
-    ],
+    description="Taux croisé 1 from_currency = X to_currency via USDT. Retourne le rate + la meilleure offre côté source (BUY) et côté cible (SELL) avec min/max, annonceur, moyens de paiement.",
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def cross_rate(request):
-    from_c = request.query_params.get("from_currency", "XOF")
-    to_c = request.query_params.get("to_currency", "GHS")
+    from_c = request.query_params.get("from_currency", "XOF").strip().upper()
+    to_c = request.query_params.get("to_currency", "GHS").strip().upper()
     country_from = request.query_params.get("country_from") or None
     country_to = request.query_params.get("country_to") or None
+    if from_c == to_c:
+        return Response({"from_currency": from_c, "to_currency": to_c, "rate": 1.0, "best_offer_from": None, "best_offer_to": None})
     if SANDBOX_API:
         rate = _sandbox_cross_rate(from_c, to_c)
+        return Response({"from_currency": from_c, "to_currency": to_c, "rate": rate, "best_offer_from": None, "best_offer_to": None})
+    # Cross : même source que les offres (snapshot si USE_REFRESH_AS_SOURCE, sinon live)
+    use_refresh = getattr(settings, "USE_REFRESH_AS_SOURCE", False)
+    if use_refresh:
+        from platforms.registry import get_default_platform
+        platform = get_default_platform()
+        code = platform.code if platform else None
+        if code:
+            offers_from = get_offers_from_snapshot(code, from_c, "BUY", country_from)
+            offers_to = get_offers_from_snapshot(code, to_c, "SELL", country_to)
+        else:
+            offers_from, offers_to = [], []
     else:
-        rate = compute_cross_rate(from_c, to_c, country_from=country_from, country_to=country_to)
-    if rate is None:
-        return Response({"error": "Taux non disponible"}, status=status.HTTP_404_NOT_FOUND)
-    rate = apply_majoration(rate, from_c, "", country_from or "")
-    return Response({"from_currency": from_c, "to_currency": to_c, "rate": rate, "sandbox": SANDBOX_API})
+        offers_from = fetch_offers_raw(asset="USDT", fiat=from_c, trade_type="BUY", country=country_from, platform_code=None)
+        offers_to = fetch_offers_raw(asset="USDT", fiat=to_c, trade_type="SELL", country=country_to, platform_code=None)
+    for o in offers_from:
+        o.setdefault("fiat", from_c)
+    for o in offers_to:
+        o.setdefault("fiat", to_c)
+    offers_from = sorted(offers_from, key=lambda x: (x.get("price") or 0))  # BUY = prix le plus bas = meilleur
+    offers_to = sorted(offers_to, key=lambda x: (x.get("price") or 0), reverse=True)  # SELL = prix le plus haut = meilleur
+    best_from = offers_from[0] if offers_from else None
+    best_to = offers_to[0] if offers_to else None
+
+    # Erreur explicite : indiquer ce qui n'existe pas
+    missing = []
+    if not best_from:
+        part = f"offres {from_c} BUY"
+        if country_from:
+            part += f" (pays: {country_from})"
+        missing.append(part)
+    if not best_to:
+        part = f"offres {to_c} SELL"
+        if country_to:
+            part += f" (pays: {country_to})"
+        missing.append(part)
+    if missing:
+        detail = "Taux croisé indisponible : " + "; ".join(missing) + "."
+        return Response(
+            {"error": "Taux non disponible", "detail": detail, "missing": missing},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    price_buy_from = float(best_from.get("price") or 0)
+    price_sell_to = float(best_to.get("price") or 0)
+    if price_buy_from <= 0:
+        detail = f"Taux croisé indisponible : prix invalide (<= 0) pour les offres {from_c} BUY."
+        return Response(
+            {"error": "Taux non disponible", "detail": detail, "missing": [f"prix valide pour {from_c} BUY"]},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    rate = apply_cross_adjustment(price_buy_from, price_sell_to, from_c, to_c)
+    return Response({
+        "from_currency": from_c,
+        "to_currency": to_c,
+        "rate": round(rate, 8),
+        "best_offer_from": _format_offer_for_api(best_from, country_from),
+        "best_offer_to": _format_offer_for_api(best_to, country_to),
+    })
 
 
-@extend_schema(
-    responses={200: _PlatformsResponseSerializer},
-    examples=[
-        OpenApiExample(
-            "Liste des plateformes",
-            value={"platforms": [{"code": "binance", "name": "Binance P2P"}]},
-            response_only=True,
-        ),
-    ],
-)
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def platforms_list(request):
-    init_platforms()
-    pl = get_all_platforms()
-    return Response({"platforms": [{"code": k, "name": v.name} for k, v in pl.items()]})
+# Liste des plateformes — désactivé (hors scope)
+# def platforms_list(request): ...
 
 
+# ---------------------------------------------------------------------------
+# API 4 : Liste des devises (admin Core > Devises)
+# ---------------------------------------------------------------------------
 @extend_schema(
     parameters=[
-        OpenApiParameter("trade_type", str, required=False, description="BUY ou SELL : ne retourner que les devises ayant un taux pour ce type"),
+        OpenApiParameter("trade_type", str, required=False, description="Filtrer par type (BUY/SELL) si best rate existant."),
     ],
     responses={200: _CurrenciesResponseSerializer},
-    description="Liste des devises gérées (source : admin Core > Devises). Optionnellement filtré par trade_type (devises ayant au moins un best rate).",
+    description="Liste des devises gérées (admin Core > Devises).",
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def rates_currencies_list(request):
+def currencies_list(request):
     trade_type = request.query_params.get("trade_type")
     qs = Currency.objects.filter(active=True).order_by("order", "code")
     if trade_type:
-        fiat_with_rate = set(
-            BestRate.objects.filter(trade_type=trade_type.upper())
-            .values_list("fiat", flat=True)
-            .distinct()
-        )
+        use_refresh = getattr(settings, "USE_REFRESH_AS_SOURCE", False)
+        if use_refresh:
+            from core.models import OffersSnapshot
+            fiat_with_rate = set(
+                OffersSnapshot.objects.filter(trade_type=trade_type.upper()).values_list("fiat", flat=True).distinct()
+            )
+        else:
+            from core.models import BestRate
+            fiat_with_rate = set(
+                BestRate.objects.filter(trade_type=trade_type.upper()).values_list("fiat", flat=True).distinct()
+            )
         qs = qs.filter(code__in=fiat_with_rate)
     currencies = [{"code": c.code, "name": c.name or ""} for c in qs]
     return Response({"currencies": currencies})
@@ -344,55 +495,5 @@ def countries_list(request):
     })
 
 
-@extend_schema(
-    description="Pays zone XOF (équivalent à GET /countries/?fiat=XOF). Conservé pour compatibilité.",
-    responses={200: _XofCountriesResponseSerializer},
-)
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def xof_countries_list(request):
-    """Pays zone XOF (source : admin Core > Pays, devise XOF)."""
-    countries = Country.objects.filter(currency__code="XOF", active=True).order_by("order", "code")
-    return Response({"countries": [{"code": c.code, "name": c.name} for c in countries]})
-
-
-@extend_schema(
-    parameters=[
-        OpenApiParameter("fiat", str, required=False, description="Filtrer par devise (XOF, GHS, XAF)"),
-        OpenApiParameter("trade_type", str, required=False, description="BUY ou SELL"),
-        OpenApiParameter("country", str, required=False, description="Code pays (ex. BJ, CI). Vide = tous les pays (meilleurs taux agrégés)."),
-    ],
-    responses={200: _BestRatesResponseSerializer},
-    description="Les 3 meilleurs taux USDT/fiat. Avec country = taux pour ce pays ; sans country = tous les pays. Alimenté par refresh_best_rates.",
-)
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def best_rates_list(request):
-    qs = BestRate.objects.all().order_by("fiat", "trade_type", "country", "platform")
-    fiat = request.query_params.get("fiat")
-    if fiat:
-        qs = qs.filter(fiat=fiat)
-    trade_type = request.query_params.get("trade_type")
-    if trade_type:
-        qs = qs.filter(trade_type=trade_type.upper())
-    country = request.query_params.get("country")
-    if country is not None and country != "":
-        qs = qs.filter(country=country)
-    # Grouper par (fiat, trade_type) : avec country on a une seule valeur; sans country on agrège tous les pays et on prend le top 3
-    from itertools import groupby
-    data = []
-    for (f, tt), group in groupby(qs, key=lambda r: (r.fiat, r.trade_type)):
-        rows = list(group)
-        rows.sort(key=lambda r: float(r.rate), reverse=(tt == "SELL"))
-        for rank, r in enumerate(rows[:3], start=1):
-            rate = apply_majoration(float(r.rate), r.fiat, r.trade_type, r.country or "")
-            data.append({
-                "fiat": r.fiat,
-                "trade_type": r.trade_type,
-                "country": r.country or None,
-                "platform": r.platform,
-                "rank": rank,
-                "rate": rate,
-                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
-            })
-    return Response({"best_rates": data})
+# xof_countries_list — désactivé ; utiliser GET /countries/?fiat=XOF
+# best_rates_list — désactivé (hors scope des 4 APIs)

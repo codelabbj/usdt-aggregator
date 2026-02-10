@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{% if adjustment.pk %}Modifier{% else %}Nouvel{% endif %} ajustement de taux croisé - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{% if adjustment.pk %}Modifier l'ajustement de taux croisé{% else %}Nouvel ajustement de taux croisé{% endif %}</h1>
+  <p>Le taux croisé « 1 devise source = X devise cible » passe par USDT : un premier leg (le client donne la devise source et reçoit des USDT), puis un second (il donne des USDT et reçoit la devise cible). Les deux champs ci‑dessous permettent d’ajuster le taux appliqué à chaque leg.</p>
+</div>
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-group">
+      <label>Cible</label>
+      <input type="text" name="target" value="{{ adjustment.target|default:'cross' }}" placeholder="cross | cross:XOF | cross:XOF:GHS" required>
+      <small>À quelles paires s’applique cette règle : <code>cross</code> = toutes ; <code>cross:XOF</code> = toutes les paires dont la source est XOF ; <code>cross:XOF:GHS</code> = uniquement la paire XOF → GHS.</small>
+    </div>
+    <div class="form-group">
+      <label>Mode</label>
+      <select name="mode">
+        <option value="percent" {% if adjustment.mode == 'percent' %}selected{% endif %}>Pourcentage (%)</option>
+        <option value="fixed" {% if adjustment.mode == 'fixed' %}selected{% endif %}>Montant fixe</option>
+      </select>
+      <small>L’ajustement est appliqué en pourcentage (ex. 2 %) ou en montant fixe (ex. +0.5 sur le prix).</small>
+    </div>
+    <div class="form-group">
+      <label>Valeur BUY (premier leg : devise source → USDT)</label>
+      <input type="number" name="value_buy" step="any" value="{{ adjustment.value_buy|default:0 }}">
+      <small>Premier leg : le client donne la devise source et reçoit des USDT (côté « achat USDT »). Cette valeur (% ou fixe) est appliquée au prix de ce leg. Positif = majoration, négatif = minoration.</small>
+    </div>
+    <div class="form-group">
+      <label>Valeur SELL (second leg : USDT → devise cible)</label>
+      <input type="number" name="value_sell" step="any" value="{{ adjustment.value_sell|default:0 }}">
+      <small>Second leg : le client donne des USDT et reçoit la devise cible (côté « vente USDT »). Cette valeur (% ou fixe) est appliquée au prix de ce leg. Positif = majoration, négatif = minoration.</small>
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" name="active" {% if adjustment.active %}checked{% endif %}> Actif</label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn">Enregistrer</button>
+      <a href="{% url 'dashboard:rate_cross' %}" class="btn btn-secondary">Annuler</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

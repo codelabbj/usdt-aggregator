@@ -5,6 +5,7 @@ from .models import (
     Country,
     LiquidityConfig,
     RateAdjustment,
+    CrossRateAdjustment,
     PlatformConfig,
     APIKey,
     APIKeyUsage,
@@ -46,14 +47,27 @@ class CountryAdmin(admin.ModelAdmin):
 
 @admin.register(LiquidityConfig)
 class LiquidityConfigAdmin(admin.ModelAdmin):
-    list_display = ("trade_type", "min_amount", "max_amount", "active")
-    list_filter = ("trade_type", "active")
+    list_display = ("trade_type", "min_amount", "max_amount", "amount_in_fiat", "require_inclusion", "active")
+    list_filter = ("trade_type", "amount_in_fiat", "require_inclusion", "active")
+    fieldsets = (
+        (None, {"fields": ("trade_type", "active")}),
+        ("Plage de montant", {"fields": ("amount_in_fiat", "min_amount", "max_amount")}),
+        ("Règle de filtrage", {"fields": ("require_inclusion",)}),
+    )
 
 
 @admin.register(RateAdjustment)
 class RateAdjustmentAdmin(admin.ModelAdmin):
-    list_display = ("scope", "currency", "country", "trade_type", "mode", "value", "active")
-    list_filter = ("scope", "mode", "active")
+    list_display = ("target", "mode", "value", "active")
+    list_filter = ("mode", "active")
+    search_fields = ("target",)
+
+
+@admin.register(CrossRateAdjustment)
+class CrossRateAdjustmentAdmin(admin.ModelAdmin):
+    list_display = ("target", "mode", "value_buy", "value_sell", "active")
+    list_filter = ("mode", "active")
+    search_fields = ("target",)
 
 
 @admin.register(PlatformConfig)

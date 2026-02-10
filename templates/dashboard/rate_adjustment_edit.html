@@ -3,54 +3,88 @@
 {% block content %}
 <div class="page-header">
   <h1>{% if adjustment.pk %}Modifier l'ajustement{% else %}Nouvel ajustement de taux{% endif %}</h1>
-  <p>Périmètre, mode (%, fixe) et valeur appliqués aux taux.</p>
+  <p>Choisissez à qui s'applique la règle (type, devise, pays), le mode (%, fixe) et la valeur. La règle la plus spécifique est appliquée.</p>
 </div>
-<div class="card">
-  <form method="post">
+<div class="card card-form">
+  <form method="post" class="rate-adjustment-form">
     {% csrf_token %}
-    <div class="form-group">
-      <label>Périmètre</label>
-      <select name="scope">
-        <option value="global" {% if adjustment.scope == 'global' %}selected{% endif %}>Global</option>
-        <option value="currency" {% if adjustment.scope == 'currency' %}selected{% endif %}>Par devise</option>
-        <option value="country" {% if adjustment.scope == 'country' %}selected{% endif %}>Par pays (XOF)</option>
-        <option value="trade_type" {% if adjustment.scope == 'trade_type' %}selected{% endif %}>Par type (achat/vente)</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Devise (ex: XOF, GHS)</label>
-      <input type="text" name="currency" value="{{ adjustment.currency|default:'' }}" placeholder="Optionnel">
-    </div>
-    <div class="form-group">
-      <label>Pays (ex: Bénin, Sénégal)</label>
-      <input type="text" name="country" value="{{ adjustment.country|default:'' }}" placeholder="Optionnel">
-    </div>
-    <div class="form-group">
-      <label>Type d'offre</label>
-      <select name="trade_type">
-        <option value="">—</option>
-        <option value="BUY" {% if adjustment.trade_type == 'BUY' %}selected{% endif %}>Achat</option>
-        <option value="SELL" {% if adjustment.trade_type == 'SELL' %}selected{% endif %}>Vente</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Mode</label>
-      <select name="mode">
-        <option value="percent" {% if adjustment.mode == 'percent' %}selected{% endif %}>Pourcentage (%)</option>
-        <option value="fixed" {% if adjustment.mode == 'fixed' %}selected{% endif %}>Montant fixe</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Valeur</label>
-      <input type="number" name="value" step="any" value="{{ adjustment.value|default:0 }}" required>
-    </div>
-    <div class="form-group">
-      <label><input type="checkbox" name="active" {% if adjustment.active %}checked{% endif %}> Actif</label>
-    </div>
+    <section class="form-section">
+      <h3 class="form-section-title">Cible (à qui s'applique)</h3>
+      <div class="form-row form-row-target">
+        <div class="form-group">
+          <label for="trade_type">Type</label>
+          <select name="trade_type" id="trade_type" required>
+            <option value="SELL" {% if target_trade_type == 'SELL' %}selected{% endif %}>SELL (Vente)</option>
+            <option value="BUY" {% if target_trade_type == 'BUY' %}selected{% endif %}>BUY (Achat)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="target_currency">Devise</label>
+          <select name="target_currency" id="target_currency">
+            <option value="">Tous (SELL / BUY seul)</option>
+            {% for c in currencies %}
+            <option value="{{ c.code }}" {% if target_currency == c.code %}selected{% endif %}>{{ c.code }}{% if c.name %} — {{ c.name }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="target_country">Pays</label>
+          <select name="target_country" id="target_country">
+            <option value="">Tous les pays</option>
+            {% for c in countries %}
+            <option value="{{ c.code }}" {% if target_country == c.code %}selected{% endif %}>{{ c.code }} — {{ c.name|default:"" }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <p class="form-hint">Ex. : SELL seul = toutes les ventes ; XOF + Tous = toutes les ventes XOF ; XOF + BJ = ventes XOF au Bénin.</p>
+    </section>
+    <section class="form-section">
+      <h3 class="form-section-title">Ajustement</h3>
+      <div class="form-row form-row-two">
+        <div class="form-group">
+          <label for="mode">Mode</label>
+          <select name="mode" id="mode">
+            <option value="percent" {% if adjustment.mode == 'percent' %}selected{% endif %}>Pourcentage (%)</option>
+            <option value="fixed" {% if adjustment.mode == 'fixed' %}selected{% endif %}>Montant fixe</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="value">Valeur</label>
+          <input type="number" name="value" id="value" step="any" value="{{ adjustment.value|default:0 }}" required>
+        </div>
+      </div>
+    </section>
+    <section class="form-section">
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" name="active" {% if adjustment.active %}checked{% endif %}>
+          <span>Règle active</span>
+        </label>
+      </div>
+    </section>
     <div class="form-actions">
-      <button type="submit" class="btn">Enregistrer</button>
+      <button type="submit" class="btn btn-primary">Enregistrer</button>
       <a href="{% url 'dashboard:rate_adjustments' %}" class="btn btn-secondary">Annuler</a>
     </div>
   </form>
 </div>
+<style>
+.card-form { max-width: 36rem; }
+.form-section { margin-bottom: 1.5rem; }
+.form-section-title { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); margin: 0 0 0.75rem 0; padding-bottom: 0.35rem; border-bottom: 1px solid var(--card-border); }
+.form-row-target { display: flex; flex-wrap: wrap; gap: 1rem; }
+.form-row-target .form-group { flex: 1; min-width: 10rem; }
+.form-row-two { display: flex; gap: 1rem; flex-wrap: wrap; }
+.form-row-two .form-group { flex: 1; min-width: 8rem; }
+.form-group label:not(.checkbox-label) { display: block; font-weight: 500; margin-bottom: 0.35rem; font-size: 0.9rem; }
+.form-group select, .form-group input[type="number"] { width: 100%; max-width: 14rem; padding: 0.5rem 0.75rem; border: 1px solid var(--card-border); border-radius: var(--radius-sm); }
+.checkbox-label { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 500; cursor: pointer; }
+.form-hint { font-size: 0.85rem; color: var(--text-muted); margin: 0.5rem 0 0 0; line-height: 1.4; }
+.form-actions { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--card-border); display: flex; gap: 0.75rem; }
+.btn-primary { background: var(--accent); color: #fff; border: none; padding: 0.5rem 1.25rem; border-radius: var(--radius-sm); font-weight: 500; cursor: pointer; }
+.btn-primary:hover { background: var(--accent-hover); }
+.form-actions a { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; }
+.form-actions a:hover { color: var(--text); }
+</style>
 {% endblock %}

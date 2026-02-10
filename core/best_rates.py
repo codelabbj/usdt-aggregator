@@ -1,15 +1,13 @@
 """
-Agrégation des meilleures offres et stockage des meilleurs taux USDT/fiat
-par devise, type (BUY/SELL), pays et plateforme.
-Les devises et pays viennent de l'admin (modèles Currency et Country).
-country="" = tous les pays (global) ; sinon code pays (ex. BJ, CI).
-À lancer à intervalle régulier (cron).
+Refresh = seule source de vérité.
+Récupère les offres brutes (plateforme) et les enregistre telles quelles dans OffersSnapshot.
+Aucun calcul : pas de tri top 3, pas de BestRate, pas de config ni ajustement.
+Les APIs lisent OffersSnapshot puis appliquent config liquidité + ajustements.
 """
 import logging
-from decimal import Decimal
 
-from core.models import BestRate, Currency, Country
-from offers.services import fetch_offers
+from core.models import Currency, Country, OffersSnapshot
+from offers.services import fetch_offers_raw
 from platforms.registry import init_platforms, get_all_platforms
 
 logger = logging.getLogger(__name__)
@@ -25,9 +23,8 @@ def _country_list_for_fiat(fiat: str):
 
 def refresh_best_rates() -> dict:
     """
-    Récupère les offres pour chaque (plateforme, devise, pays, BUY/SELL),
-    calcule les 3 meilleurs taux et les enregistre.
-    Devises et pays = ceux actifs dans l'admin (Currency, Country).
+    Récupère les offres brutes pour chaque (plateforme, devise, pays, BUY/SELL)
+    et les enregistre dans OffersSnapshot. Aucun calcul.
     """
     init_platforms()
     platforms = get_all_platforms()
@@ -55,7 +52,7 @@ def refresh_best_rates() -> dict:
                             "refresh_best_rates: fetch %s %s %s %s",
                             platform_code, fiat, country_label, trade_type,
                         )
-                        offers = fetch_offers(
+                        offers = fetch_offers_raw(
                             asset="USDT",
                             fiat=fiat,
                             trade_type=trade_type,
@@ -63,30 +60,16 @@ def refresh_best_rates() -> dict:
                             platform_code=platform_code,
                             use_cache=False,
                         )
-                        key = lambda o: (o.get("adjusted_price") or o.get("price") or 0)
-                        offers = sorted(offers, key=key, reverse=(trade_type == "SELL"))
-                        top3 = offers[:3]
-
-                        BestRate.objects.filter(
+                        snapshot, _ = OffersSnapshot.objects.update_or_create(
+                            platform=platform_code,
                             fiat=fiat,
                             trade_type=trade_type,
-                            country=country,
-                            platform=platform_code,
-                        ).delete()
-
-                        for offer in top3:
-                            rate = offer.get("adjusted_price") or offer.get("price") or 0
-                            BestRate.objects.create(
-                                fiat=fiat,
-                                trade_type=trade_type,
-                                country=country,
-                                platform=platform_code,
-                                rate=Decimal(str(rate)),
-                            )
-                            updated += 1
-
+                            country=country or "",
+                            defaults={"data": offers},
+                        )
+                        updated += 1
                         logger.info(
-                            "refresh_best_rates: %s %s %s %s — %s offres → top 3 enregistrés",
+                            "refresh_best_rates: %s %s %s %s — %s offres enregistrées",
                             platform_code, fiat, country_label, trade_type, len(offers),
                         )
                     except Exception as e:
@@ -94,5 +77,5 @@ def refresh_best_rates() -> dict:
                         errors.append(msg)
                         logger.exception("refresh_best_rates: %s", msg)
 
-    logger.info("refresh_best_rates: fin — total updated=%s, errors=%s", updated, len(errors))
+    logger.info("refresh_best_rates: fin — total snapshots=%s, errors=%s", updated, len(errors))
     return {"updated": updated, "errors": errors}

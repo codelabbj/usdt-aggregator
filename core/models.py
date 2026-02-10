@@ -51,7 +51,7 @@ class Country(models.Model):
 
 
 class LiquidityConfig(models.Model):
-    """Quantité min/max pour filtrer les offres BUY et SELL."""
+    """Min/max fiat pour filtrer les offres BUY et SELL (plage de montant en devise)."""
 
     TRADE_TYPE_BUY = "BUY"
     TRADE_TYPE_SELL = "SELL"
@@ -60,11 +60,19 @@ class LiquidityConfig(models.Model):
     trade_type = models.CharField(max_length=4, choices=TRADE_TYPES)
     min_amount = models.DecimalField(
         max_digits=20, decimal_places=8, default=0,
-        help_text="Quantité minimale (en USDT)"
+        help_text="Montant fiat minimum (ex. FCFA)"
     )
     max_amount = models.DecimalField(
         max_digits=20, decimal_places=8, null=True, blank=True,
-        help_text="Quantité maximale (en USDT), vide = pas de limite"
+        help_text="Montant fiat maximum, vide = pas de limite"
+    )
+    require_inclusion = models.BooleanField(
+        default=False,
+        help_text="Si coché : garder seulement les offres dont la plage est incluse dans [min, max]. Sinon : chevauchement suffit."
+    )
+    amount_in_fiat = models.BooleanField(
+        default=True,
+        help_text="Si coché : min/max config et plage offre en fiat (min_fiat, max_fiat). Sinon : en USDT (min_usdt, max_usdt)."
     )
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -80,32 +88,25 @@ class LiquidityConfig(models.Model):
 
 
 class RateAdjustment(models.Model):
-    """Ajustement des taux (markup/markdown): % ou montant fixe."""
-
-    SCOPE_GLOBAL = "global"
-    SCOPE_CURRENCY = "currency"
-    SCOPE_COUNTRY = "country"
-    SCOPE_TRADE_TYPE = "trade_type"
-    SCOPE_CHOICES = [
-        (SCOPE_GLOBAL, "Global"),
-        (SCOPE_CURRENCY, "Par devise"),
-        (SCOPE_COUNTRY, "Par pays (XOF)"),
-        (SCOPE_TRADE_TYPE, "Par type (achat/vente)"),
-    ]
-
+    """
+    Règle d'ajustement des taux. 3 champs : cible (à qui), mode (comment), valeur.
+    Offres : cible contient toujours SELL ou BUY (base SELL/BUY, puis XOF:SELL, XOF:BJ:SELL…). Pas de global ni devise seule.
+    Cross : cross | cross:SOURCE | cross:SOURCE:CIBLE.
+    """
     MODE_PERCENT = "percent"
     MODE_FIXED = "fixed"
     MODE_CHOICES = [(MODE_PERCENT, "Pourcentage (%)"), (MODE_FIXED, "Montant fixe")]
 
-    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default=SCOPE_GLOBAL)
-    currency = models.CharField(max_length=10, blank=True, help_text="Ex: XOF, GHS, XAF")
-    country = models.CharField(max_length=50, blank=True, help_text="Ex: Bénin, Sénégal (pour XOF)")
-    trade_type = models.CharField(max_length=4, blank=True, choices=[("BUY", "Achat"), ("SELL", "Vente")])
-    mode = models.CharField(max_length=10, choices=MODE_CHOICES)
-    value = models.DecimalField(
-        max_digits=20, decimal_places=8,
-        help_text="Pourcentage (ex: 2.5) ou montant fixe"
+    # Offres uniquement : SELL, BUY, XOF:SELL, XOF:BUY, XOF:BJ:SELL… (toujours SELL ou BUY)
+    target = models.CharField(
+        max_length=50,
+        default="SELL",
+        help_text="Offres: SELL | BUY | XOF:SELL | XOF:BUY | XOF:BJ:SELL…",
     )
+    # Mode : % ou montant fixe
+    mode = models.CharField(max_length=10, choices=MODE_CHOICES)
+    # Valeur : le % (ex. 2.5) ou le montant fixe. Positif = majoration, négatif = minoration.
+    value = models.DecimalField(max_digits=20, decimal_places=8)
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -115,7 +116,45 @@ class RateAdjustment(models.Model):
         verbose_name_plural = "Ajustements de taux"
 
     def __str__(self):
-        return f"{self.get_scope_display()} {self.get_mode_display()}={self.value}"
+        return f"{self.target} {self.get_mode_display()}={self.value}"
+
+
+class CrossRateAdjustment(models.Model):
+    """
+    Ajustement dédié au taux croisé (from → to via USDT).
+    Indique l'ajustement à appliquer sur le BUY (côté devise source) et sur le SELL (côté devise cible).
+    Cible = cross | cross:SOURCE | cross:SOURCE:CIBLE (ex. cross:XOF:GHS).
+    """
+    MODE_PERCENT = "percent"
+    MODE_FIXED = "fixed"
+    MODE_CHOICES = [(MODE_PERCENT, "Pourcentage (%)"), (MODE_FIXED, "Montant fixe")]
+
+    target = models.CharField(
+        max_length=50,
+        default="cross",
+        help_text="cross | cross:SOURCE | cross:SOURCE:CIBLE (ex. cross:XOF:GHS)",
+    )
+    mode = models.CharField(max_length=10, choices=MODE_CHOICES)
+    # Ajustement sur le prix BUY (côté devise source : client donne from_currency, reçoit USDT)
+    value_buy = models.DecimalField(
+        max_digits=20, decimal_places=8, default=0,
+        help_text="% ou montant fixe sur le leg BUY. Positif = majoration, négatif = minoration.",
+    )
+    # Ajustement sur le prix SELL (côté devise cible : client donne USDT, reçoit to_currency)
+    value_sell = models.DecimalField(
+        max_digits=20, decimal_places=8, default=0,
+        help_text="% ou montant fixe sur le leg SELL. Positif = majoration, négatif = minoration.",
+    )
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Ajustement taux croisé"
+        verbose_name_plural = "Ajustements taux croisé"
+
+    def __str__(self):
+        return f"{self.target} BUY={self.value_buy} SELL={self.value_sell}"
 
 
 class PlatformConfig(models.Model):
@@ -254,3 +293,26 @@ class BestRate(models.Model):
 
     def __str__(self):
         return f"USDT/{self.fiat} {self.trade_type} {self.rate} ({self.platform})"
+
+
+class OffersSnapshot(models.Model):
+    """
+    Snapshot des offres brutes (refresh = seule source de vérité).
+    Une ligne par (platform, fiat, trade_type, country). data = liste d'offres (JSON), aucun calcul.
+    Les APIs lisent ici puis appliquent config liquidité + ajustements.
+    """
+    platform = models.CharField(max_length=30)
+    fiat = models.CharField(max_length=10)
+    trade_type = models.CharField(max_length=4)  # BUY, SELL
+    country = models.CharField(max_length=10, blank=True, default="")
+    data = models.JSONField(default=list, help_text="Liste d'offres brutes (price, min_fiat, max_fiat, advertiser, etc.)")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Snapshot offres"
+        verbose_name_plural = "Snapshots offres"
+        unique_together = [["platform", "fiat", "trade_type", "country"]]
+        ordering = ["platform", "fiat", "trade_type", "country"]
+
+    def __str__(self):
+        return f"{self.platform} {self.fiat} {self.trade_type} {self.country or 'all'} ({len(self.data)} offres)"

@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Offres - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Offres</h1>
+  <p>Choisissez devise, type (BUY/SELL), pays et plateforme puis récupérez les offres. Les résultats respectent la config liquidité et les ajustements de taux (source : snapshot si activée, sinon live).</p>
+</div>
+
+<div class="card card-offers-filter">
+  <h2 class="card-title">Critères</h2>
+  <form method="get" action="{% url 'dashboard:offers_fetch' %}" class="offers-form">
+    <div class="form-row form-row-fields">
+      <div class="form-group">
+        <label for="fiat">Devise</label>
+        <select name="fiat" id="fiat" required>
+          <option value="">— Choisir —</option>
+          {% for c in currencies %}
+          <option value="{{ c.code }}" {% if fiat == c.code %}selected{% endif %}>{{ c.code }}{% if c.name %} ({{ c.name }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="trade_type">Type</label>
+        <select name="trade_type" id="trade_type" required>
+          <option value="">— Choisir —</option>
+          <option value="BUY" {% if trade_type == 'BUY' %}selected{% endif %}>BUY (Achat)</option>
+          <option value="SELL" {% if trade_type == 'SELL' %}selected{% endif %}>SELL (Vente)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="country">Pays</label>
+        <select name="country" id="country">
+          <option value="">Tous</option>
+          {% for c in countries %}
+          <option value="{{ c.code }}" {% if country == c.code %}selected{% endif %}>{{ c.code }} — {{ c.name|default:"" }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="platform">Plateforme</label>
+        <select name="platform" id="platform">
+          <option value="">Défaut</option>
+          {% for code, p in platforms.items %}
+          <option value="{{ code }}" {% if platform_code == code %}selected{% endif %}>{{ code }} — {{ p.name|default:code }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Récupérer les offres</button>
+    </div>
+  </form>
+</div>
+
+{% if page_obj %}
+<div class="card card-offers-results">
+  <div class="card-results-header">
+    <h2 class="card-title">Résultats</h2>
+    <span class="results-count">{{ total_count }} offre{{ total_count|pluralize }}</span>
+  </div>
+  <div class="table-wrapper">
+    <table class="offers-table">
+      <thead>
+        <tr>
+          <th class="col-platform">Plateforme</th>
+          <th class="col-id">ID offre</th>
+          <th class="col-num">Prix</th>
+          <th class="col-num">Prix ajusté</th>
+          <th class="col-num">Min</th>
+          <th class="col-num">Max</th>
+          <th class="col-advertiser">Annonceur</th>
+          <th class="col-payment">Moyens de paiement</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in offers %}
+        <tr>
+          <td class="col-platform"><span class="badge badge-platform">{{ o.platform|default:"—" }}</span></td>
+          <td class="col-id"><code class="offer-id">{{ o.offer_id|default:"—" }}</code></td>
+          <td class="col-num num cell-price">{{ o.price|default:"—" }}</td>
+          <td class="col-num num cell-price cell-price-adjusted">{{ o.adjusted_price|default:"—" }}</td>
+          <td class="col-num num">{{ o.min_fiat|default:"—" }}</td>
+          <td class="col-num num">{{ o.max_fiat|default:"—" }}</td>
+          <td class="col-advertiser">{% if o.advertiser %}{{ o.advertiser.nick_name|default:"—" }}{% else %}—{% endif %}</td>
+          <td class="col-payment">{% if o.payment_methods %}{% for pm in o.payment_methods %}{{ pm.name|default:pm.identifier }}{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="empty-cell">Aucune offre pour ces critères.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+  <nav class="pagination">
+    <span class="pagination-info">Page {{ page_obj.number }} sur {{ page_obj.paginator.num_pages }}</span>
+    <div class="pagination-buttons">
+      {% if page_obj.has_previous %}
+      <a href="?fiat={{ fiat }}&trade_type={{ trade_type }}{% if country %}&country={{ country }}{% endif %}{% if platform_code %}&platform={{ platform_code }}{% endif %}&page={{ page_obj.previous_page_number }}" class="btn btn-sm btn-secondary">Précédent</a>
+      {% endif %}
+      {% for p in page_obj.paginator.page_range %}
+        {% if p == page_obj.number %}
+      <span class="btn btn-sm btn-current">{{ p }}</span>
+        {% elif p >= page_obj.number|add:"-2" and p <= page_obj.number|add:"2" %}
+      <a href="?fiat={{ fiat }}&trade_type={{ trade_type }}{% if country %}&country={{ country }}{% endif %}{% if platform_code %}&platform={{ platform_code }}{% endif %}&page={{ p }}" class="btn btn-sm btn-secondary">{{ p }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if page_obj.has_next %}
+      <a href="?fiat={{ fiat }}&trade_type={{ trade_type }}{% if country %}&country={{ country }}{% endif %}{% if platform_code %}&platform={{ platform_code }}{% endif %}&page={{ page_obj.next_page_number }}" class="btn btn-sm btn-secondary">Suivant</a>
+      {% endif %}
+    </div>
+  </nav>
+  {% endif %}
+</div>
+{% endif %}
+
+<style>
+/* Filtre */
+.card-offers-filter .card-title { margin: 0 0 1rem 0; font-size: 1.05rem; font-weight: 600; }
+.offers-form .form-row-fields { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+.offers-form .form-group { margin-bottom: 0; }
+.offers-form label { display: block; font-weight: 500; margin-bottom: 0.35rem; font-size: 0.875rem; color: var(--text); }
+.offers-form select { padding: 0.5rem 0.75rem; border: 1px solid var(--card-border); border-radius: var(--radius-sm); min-width: 8rem; background: var(--card-bg); }
+.offers-form .form-actions { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--card-border); }
+.btn-primary { background: var(--accent); color: #fff; border: none; padding: 0.5rem 1.25rem; border-radius: var(--radius-sm); font-weight: 500; cursor: pointer; }
+.btn-primary:hover { background: var(--accent-hover); }
+
+/* Résultats */
+.card-offers-results { overflow: hidden; padding: 0; }
+.card-results-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; padding: 1.25rem 1.5rem 1rem; border-bottom: 1px solid var(--card-border); }
+.card-results-header .card-title { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.results-count { font-size: 0.875rem; color: var(--text-muted); font-weight: 500; }
+
+/* Tableau */
+.table-wrapper { overflow-x: auto; }
+.offers-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.offers-table thead th { background: #f8fafc; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--card-border); white-space: nowrap; }
+.offers-table tbody td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.offers-table tbody tr:hover { background: #fafbfc; }
+.offers-table tbody tr:last-child td { border-bottom: none; }
+.offers-table .col-num { text-align: right; font-variant-numeric: tabular-nums; }
+.offers-table .num { color: var(--text); font-weight: 500; }
+.offers-table .cell-price { color: #0d9488; font-weight: 600; }
+.offers-table .cell-price-adjusted { color: #0f766e; background: #f0fdfa; }
+.badge-platform { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; font-weight: 500; background: #e0f2fe; color: #0369a1; }
+.offer-id { font-size: 0.8rem; font-family: ui-monospace, monospace; background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; color: var(--text); }
+.empty-cell { color: var(--text-muted); padding: 2rem 1.5rem !important; text-align: center; font-size: 0.9rem; }
+
+/* Pagination */
+.pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; padding: 1rem 1.5rem; border-top: 1px solid var(--card-border); background: #fafbfc; }
+.pagination-info { font-size: 0.875rem; color: var(--text-muted); }
+.pagination-buttons { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.pagination .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.85rem; border-radius: var(--radius-sm); text-decoration: none; }
+.pagination .btn-current { background: var(--accent); color: #fff; border: none; cursor: default; pointer-events: none; }
+</style>
+{% endblock %}

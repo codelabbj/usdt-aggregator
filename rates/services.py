@@ -21,24 +21,25 @@ def _platform_code() -> str:
 def get_best_usdt_rate(fiat: str, trade_type: str, country: Optional[str] = None) -> Optional[float]:
     """
     Retourne le meilleur taux USDT/fiat. BUY = prix le plus bas ; SELL = prix le plus haut.
-    Si country est fourni : taux pour ce pays. Sinon (None ou "") : meilleur tous pays confondus.
+    Si USE_REFRESH_AS_SOURCE : on lit les offres (snapshot) via fetch_offers, pas BestRate.
+    Sinon : BestRate puis fallback fetch_offers.
     """
+    from django.conf import settings
     from core.models import BestRate
 
-    qs = BestRate.objects.filter(fiat=fiat, trade_type=trade_type)
-    if country:
-        qs = qs.filter(country=country)
-    else:
-        # Tous les pays : on prend le meilleur parmi toutes les lignes (tous country)
-        pass
-    if trade_type == "SELL":
-        best = qs.order_by("-rate").first()
-    else:
-        best = qs.order_by("rate").first()
-    if best is not None:
-        return float(best.rate)
+    use_refresh = getattr(settings, "USE_REFRESH_AS_SOURCE", False)
+    if not use_refresh:
+        qs = BestRate.objects.filter(fiat=fiat, trade_type=trade_type)
+        if country:
+            qs = qs.filter(country=country)
+        if trade_type == "SELL":
+            best = qs.order_by("-rate").first()
+        else:
+            best = qs.order_by("rate").first()
+        if best is not None:
+            return float(best.rate)
 
-    # Sinon fetch offres et prendre la meilleure
+    # Source = snapshot (refresh) ou fallback : fetch offres et prendre la meilleure
     offers = fetch_offers(asset="USDT", fiat=fiat, trade_type=trade_type, country=country, use_cache=True)
     if not offers:
         return None

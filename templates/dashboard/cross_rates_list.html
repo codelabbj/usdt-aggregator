@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Taux croisés - Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Taux croisés</h1>
+  <p>Choisissez la devise source, optionnellement la devise cible et les pays, puis affichez les taux (1 source = X cible). Si la cible est vide, tous les taux depuis la source sont listés. Le taux = (meilleur prix SELL cible) / (meilleur prix BUY source), puis ajustement croisé. « — » = pas d’offres pour l’un des deux côtés.</p>
+</div>
+
+<div class="card card-offers-filter">
+  <h2 class="card-title">Critères</h2>
+  <form method="get" action="{% url 'dashboard:cross_rates_list' %}" class="offers-form">
+    <div class="form-row form-row-fields">
+      <div class="form-group">
+        <label for="from_currency">Devise source</label>
+        <select name="from_currency" id="from_currency">
+          <option value="">— Choisir —</option>
+          {% for c in currencies %}
+          <option value="{{ c.code }}" {% if from_currency == c.code %}selected{% endif %}>{{ c.code }}{% if c.name %} ({{ c.name }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="to_currency">Devise cible</label>
+        <select name="to_currency" id="to_currency">
+          <option value="">Toutes (liste depuis la source)</option>
+          {% for c in currencies %}
+          <option value="{{ c.code }}" {% if to_currency == c.code %}selected{% endif %}>{{ c.code }}{% if c.name %} ({{ c.name }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="country_from">Pays source</label>
+        <select name="country_from" id="country_from">
+          <option value="">Tous</option>
+          {% for c in countries %}
+          <option value="{{ c.code }}" {% if country_from == c.code %}selected{% endif %}>{{ c.code }} — {{ c.name|default:"" }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="country_to">Pays cible</label>
+        <select name="country_to" id="country_to">
+          <option value="">Tous</option>
+          {% for c in countries %}
+          <option value="{{ c.code }}" {% if country_to == c.code %}selected{% endif %}>{{ c.code }} — {{ c.name|default:"" }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Afficher les taux croisés</button>
+    </div>
+  </form>
+</div>
+
+{% if from_currency %}
+<div class="card card-offers-results">
+  <div class="card-results-header">
+    <h2 class="card-title">Résultats</h2>
+    <span class="results-count">{{ rows|length }} taux</span>
+  </div>
+  <div class="table-wrapper">
+    <table class="offers-table cross-rates-table">
+      <thead>
+        <tr>
+          <th>Devise source</th>
+          <th>Devise cible</th>
+          <th>Pays source</th>
+          <th>Pays cible</th>
+          <th class="col-num">Taux (1 source = X cible)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.from_currency }}</td>
+          <td>{{ r.to_currency }}</td>
+          <td>{{ r.country_from }}</td>
+          <td>{{ r.country_to }}</td>
+          <td class="col-num cell-price">{% if r.rate is not None %}{{ r.rate }}{% else %}<span class="rate-empty rate-error" title="{% if r.missing %}{{ r.missing|join:', ' }}{% endif %}">{% if r.detail %}{{ r.detail }}{% else %}—{% endif %}</span>{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="empty-cell">Aucun taux pour ces critères. Choisissez une devise source.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<style>
+.card-offers-filter .card-title { margin: 0 0 1rem 0; font-size: 1.05rem; font-weight: 600; }
+.offers-form .form-row-fields { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+.offers-form .form-group { margin-bottom: 0; }
+.offers-form label { display: block; font-weight: 500; margin-bottom: 0.35rem; font-size: 0.875rem; color: var(--text); }
+.offers-form select { padding: 0.5rem 0.75rem; border: 1px solid var(--card-border); border-radius: var(--radius-sm); min-width: 8rem; background: var(--card-bg); }
+.offers-form .form-actions { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--card-border); }
+.btn-primary { background: var(--accent); color: #fff; border: none; padding: 0.5rem 1.25rem; border-radius: var(--radius-sm); font-weight: 500; cursor: pointer; }
+.btn-primary:hover { background: var(--accent-hover); }
+.card-offers-results { overflow: hidden; padding: 0; }
+.card-results-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; padding: 1.25rem 1.5rem 1rem; border-bottom: 1px solid var(--card-border); }
+.card-results-header .card-title { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.results-count { font-size: 0.875rem; color: var(--text-muted); font-weight: 500; }
+.table-wrapper { overflow-x: auto; }
+.cross-rates-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.cross-rates-table thead th { background: #f8fafc; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--card-border); }
+.cross-rates-table .col-num { text-align: right; }
+.cross-rates-table tbody td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; }
+.cross-rates-table tbody tr:hover { background: #fafbfc; }
+.cross-rates-table tbody tr:last-child td { border-bottom: none; }
+.cross-rates-table .cell-price { color: #0d9488; font-weight: 600; }
+.empty-cell { color: var(--text-muted); padding: 2rem 1.5rem !important; text-align: center; font-size: 0.9rem; }
+.rate-empty { color: var(--text-muted); }
+.rate-error { text-align: left; color: #b91c1c; font-weight: 500; font-size: 0.8rem; white-space: normal; max-width: 28rem; }
+</style>
+{% endblock %}

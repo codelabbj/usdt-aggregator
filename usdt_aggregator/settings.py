@@ -146,6 +146,9 @@ TIMEZONE_DISPLAY = os.environ.get("TIMEZONE_DISPLAY", "Africa/Abidjan")
 # Mode sandbox API (réponses mock pour tests)
 SANDBOX_API = os.environ.get("SANDBOX_API", "0") == "1"
 
+# Refresh = seule source de vérité : les APIs lisent les offres depuis OffersSnapshot (pas d'appel plateforme).
+USE_REFRESH_AS_SOURCE = os.environ.get("USE_REFRESH_AS_SOURCE", "1") == "1"
+
 # Logging : console en INFO pour voir les logs du refresh best rates
 LOGGING = {
     "version": 1,

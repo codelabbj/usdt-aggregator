@@ -1,40 +1,191 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Config liquidité - Dashboard{% endblock %}
 {% block content %}
 <div class="page-header">
   <h1>Filtrage des offres par liquidité</h1>
-  <p>Définir la quantité minimale et maximale (en USDT) pour les offres BUY et SELL. Les offres hors de ces bornes sont exclues des réponses API.</p>
+  <p>Définir le montant fiat minimum et maximum (ex. FCFA) pour les offres BUY et SELL. Les offres dont la plage [min_fiat, max_fiat] ne chevauche pas cette plage sont exclues.</p>
 </div>
+
+{% if messages %}
+<ul class="messages">
+  {% for message in messages %}
+  <li class="message-{{ message.tags }}">{{ message }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if can_add %}
+<div class="card card-add-form" style="margin-bottom: 1.5rem;">
+  <h2 class="card-title">Ajouter une config</h2>
+  <form method="post" class="liquidity-form liquidity-form-add">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="add">
+    <section class="form-section">
+      <div class="form-group">
+        <label for="add_trade_type">Type</label>
+        <select id="add_trade_type" name="trade_type" required>
+          <option value="">— Choisir —</option>
+          {% for code, label in available_to_add %}
+          <option value="{{ code }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </section>
+    <section class="form-section">
+      <h3 class="form-section-title">Unité et montants</h3>
+      <div class="form-row form-row-fields">
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" name="amount_in_fiat" checked>
+            <span>Plage en fiat</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label for="add_min">Min</label>
+          <input type="number" id="add_min" name="min_amount" step="any" value="0" min="0" required>
+        </div>
+        <div class="form-group">
+          <label for="add_max">Max</label>
+          <input type="number" id="add_max" name="max_amount" step="any" min="0" placeholder="Vide = pas de limite">
+        </div>
+      </div>
+    </section>
+    <section class="form-section">
+      <div class="form-row form-row-checkboxes">
+        <label class="checkbox-label">
+          <input type="checkbox" name="require_inclusion">
+          <span>Inclusion stricte</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" name="active" checked>
+          <span>Actif</span>
+        </label>
+      </div>
+    </section>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Ajouter</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 <div class="card">
-  <table>
+  <table class="liquidity-table">
     <thead>
       <tr>
         <th>Type</th>
-        <th>Min (USDT)</th>
-        <th>Max (USDT)</th>
+        <th>Fiat/USDT</th>
+        <th>Min</th>
+        <th>Max</th>
+        <th>Inclusion</th>
         <th>Actif</th>
-        <th>Action</th>
+        <th style="width: 180px;">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for c in configs %}
-      <tr>
+      <tr data-trade-type="{{ c.trade_type }}" class="row-view">
         <td>{{ c.get_trade_type_display }}</td>
+        <td>{% if c.amount_in_fiat %}Fiat{% else %}USDT{% endif %}</td>
         <td>{{ c.min_amount }}</td>
         <td>{{ c.max_amount|default:"—" }}</td>
+        <td>{% if c.require_inclusion %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
         <td>{% if c.active %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
-        <td><a href="{% url 'dashboard:liquidity_edit' c.trade_type %}" class="btn btn-sm btn-secondary">Modifier</a></td>
+        <td>
+          <button type="button" class="btn btn-sm btn-secondary btn-edit" data-trade-type="{{ c.trade_type }}">Modifier</button>
+          <form method="post" action="{% url 'dashboard:liquidity_delete' c.trade_type %}" class="form-delete-inline" onsubmit="return confirm('Supprimer la config {{ c.trade_type }} ?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-danger">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+      <tr data-trade-type="{{ c.trade_type }}" class="row-edit" style="display: none;">
+        <td colspan="7" class="cell-edit-form">
+          <form method="post" action="{% url 'dashboard:liquidity_edit' c.trade_type %}" class="liquidity-form-inline">
+            {% csrf_token %}
+            <div class="inline-edit-grid">
+              <div class="inline-edit-label">{{ c.get_trade_type_display }}</div>
+              <div class="inline-edit-field">
+                <label class="checkbox-label"><input type="checkbox" name="amount_in_fiat" {% if c.amount_in_fiat %}checked{% endif %}> Fiat</label>
+              </div>
+              <div class="inline-edit-field">
+                <label for="edit_min_{{ c.trade_type }}">Min</label>
+                <input type="number" id="edit_min_{{ c.trade_type }}" name="min_amount" step="any" value="{{ c.min_amount|default:0 }}" min="0" required>
+              </div>
+              <div class="inline-edit-field">
+                <label for="edit_max_{{ c.trade_type }}">Max</label>
+                <input type="number" id="edit_max_{{ c.trade_type }}" name="max_amount" step="any" value="{% if c.max_amount %}{{ c.max_amount }}{% endif %}" min="0" placeholder="Vide = pas de limite">
+              </div>
+              <div class="inline-edit-field">
+                <label class="checkbox-label"><input type="checkbox" name="require_inclusion" {% if c.require_inclusion %}checked{% endif %}> Inclusion</label>
+              </div>
+              <div class="inline-edit-field">
+                <label class="checkbox-label"><input type="checkbox" name="active" {% if c.active %}checked{% endif %}> Actif</label>
+              </div>
+              <div class="inline-edit-actions">
+                <button type="submit" class="btn btn-primary btn-sm">Enregistrer</button>
+                <button type="button" class="btn btn-secondary btn-sm btn-cancel-edit" data-trade-type="{{ c.trade_type }}">Annuler</button>
+              </div>
+            </div>
+          </form>
+        </td>
       </tr>
       {% empty %}
       <tr>
-        <td colspan="5">Aucune config. Créez-en via les boutons ci-dessous pour BUY et SELL.</td>
+        <td colspan="7" style="color: var(--text-muted); padding: 1.5rem;">
+          Aucune config. Utilisez le formulaire « Ajouter une config » ci-dessus pour créer BUY ou SELL.
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  <div class="form-actions" style="margin-top: 1rem;">
-    <a href="{% url 'dashboard:liquidity_edit' 'BUY' %}" class="btn">Config BUY</a>
-    <a href="{% url 'dashboard:liquidity_edit' 'SELL' %}" class="btn">Config SELL</a>
-  </div>
 </div>
+
+<style>
+.card-title { margin: 0 0 1rem 0; font-size: 1.1rem; font-weight: 600; }
+.form-section { margin-bottom: 1.25rem; }
+.form-section-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); margin: 0 0 0.5rem 0; }
+.form-row-fields { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+.form-row-fields .form-group { margin-bottom: 0; }
+.form-row-fields label:not(.checkbox-label) { display: block; font-weight: 500; margin-bottom: 0.25rem; font-size: 0.9rem; }
+.form-row-fields input[type="number"], .form-row-fields select { padding: 0.45rem 0.65rem; border: 1px solid var(--card-border); border-radius: var(--radius-sm); }
+.form-row-checkboxes { display: flex; flex-wrap: wrap; gap: 1rem; }
+.checkbox-label { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 500; cursor: pointer; }
+.liquidity-form-add .form-actions { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--card-border); }
+.btn-primary { background: var(--accent); color: #fff; border: none; padding: 0.5rem 1.25rem; border-radius: var(--radius-sm); font-weight: 500; cursor: pointer; }
+.btn-primary:hover { background: var(--accent-hover); }
+.cell-edit-form { background: var(--bg-page); padding: 1rem 1.25rem; vertical-align: middle; }
+.inline-edit-grid { display: grid; grid-template-columns: auto 1fr 1fr 1fr auto auto auto; gap: 0.75rem 1rem; align-items: end; }
+@media (max-width: 720px) { .inline-edit-grid { grid-template-columns: 1fr 1fr; } }
+.inline-edit-label { font-weight: 600; align-self: center; }
+.inline-edit-field label:not(.checkbox-label) { display: block; font-size: 0.8rem; font-weight: 500; margin-bottom: 0.2rem; color: var(--text-muted); }
+.inline-edit-field input[type="number"] { width: 100%; min-width: 5rem; padding: 0.4rem 0.5rem; border: 1px solid var(--card-border); border-radius: var(--radius-sm); }
+.inline-edit-actions { display: flex; gap: 0.5rem; align-items: center; }
+.btn-sm { padding: 0.4rem 0.75rem; font-size: 0.875rem; }
+.form-delete-inline { display: inline; margin-left: 0.25rem; }
+.btn-danger { background: var(--error); color: #fff; border: none; }
+.btn-danger:hover { filter: brightness(1.1); }
+.messages { list-style: none; padding: 0; margin: 0 0 1rem 0; }
+.message-success { color: var(--success); background: var(--success-bg); padding: 0.5rem 1rem; border-radius: var(--radius-sm); margin-bottom: 0.25rem; }
+.message-error { color: var(--error); background: var(--error-bg); padding: 0.5rem 1rem; border-radius: var(--radius-sm); margin-bottom: 0.25rem; }
+</style>
+<script>
+(function() {
+  document.querySelectorAll('.btn-edit').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tt = this.getAttribute('data-trade-type');
+      document.querySelector('.row-view[data-trade-type="' + tt + '"]').style.display = 'none';
+      document.querySelector('.row-edit[data-trade-type="' + tt + '"]').style.display = 'table-row';
+    });
+  });
+  document.querySelectorAll('.btn-cancel-edit').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tt = this.getAttribute('data-trade-type');
+      document.querySelector('.row-view[data-trade-type="' + tt + '"]').style.display = '';
+      document.querySelector('.row-edit[data-trade-type="' + tt + '"]').style.display = 'none';
+    });
+  });
+})();
+</script>
 {% endblock %}
