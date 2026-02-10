@@ -4,6 +4,38 @@ Guide pas à pas pour déployer l’application en production (Linux).
 
 ---
 
+## Pull et redéploiement (mise à jour du code)
+
+Quand le code a déjà été déployé une fois, pour récupérer les derniers changements et redéployer :
+
+1. **Se connecter au serveur** (SSH).
+2. **Aller dans le répertoire du projet**  
+   `cd /var/www/usdt_aggregator` (ou ton chemin).
+3. **Récupérer le code**  
+   `git pull origin main` (ou la branche utilisée).
+4. **Activer l'environnement virtuel**  
+   `source .venv/bin/activate`
+5. **Mettre à jour les dépendances**  
+   `pip install -r requirements.txt`
+6. **Appliquer les migrations**  
+   `python manage.py migrate`
+7. **Recollecter les fichiers statiques**  
+   `python manage.py collectstatic --noinput`
+8. **Redémarrer le service Gunicorn**  
+   `sudo systemctl restart usdt-aggregator`
+9. **Vérifier que le service tourne**  
+   `sudo systemctl status usdt-aggregator`
+
+Le cron (`refresh_best_rates`) continue de tourner ; pas besoin de le modifier sauf si tu changes le chemin du projet.
+
+**Récap en une commande** (à exécuter depuis le répertoire du projet, avec le venv activé) :
+
+```bash
+cd /var/www/usdt_aggregator && git pull origin main && source .venv/bin/activate && pip install -r requirements.txt && python manage.py migrate && python manage.py collectstatic --noinput && sudo systemctl restart usdt-aggregator
+```
+
+---
+
 ## 1. Prérequis sur le serveur
 
 - **OS** : Linux (Ubuntu 22.04 / Debian 12 par exemple).
