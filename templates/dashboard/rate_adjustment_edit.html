@@ -54,6 +54,13 @@
           <input type="number" name="value" id="value" step="any" value="{{ adjustment.value|default:0 }}" required>
         </div>
       </div>
+      <div class="form-group" style="margin-top: 0.75rem;">
+        <label class="checkbox-label">
+          <input type="checkbox" name="minorer" {% if adjustment.minorer %}checked{% endif %}>
+          <span>Minorer (réduire le prix)</span>
+        </label>
+        <p class="form-hint">Si coché : la valeur réduit le prix. Sinon : elle l’augmente (majoration).</p>
+      </div>
     </section>
     <section class="form-section">
       <div class="form-group">

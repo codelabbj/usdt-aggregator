@@ -38,7 +38,7 @@ def apply_majoration(
     trade_type: str = "",
     country: str = "",
 ) -> float:
-    """Applique la règle RateAdjustment (offres) la plus spécifique. SELL = majoration (v positif augmente le prix), BUY = minoration (v positif diminue le prix)."""
+    """Applique la règle RateAdjustment (offres) la plus spécifique. Minorer / majorer selon le champ minorer de la règle."""
     value = Decimal(str(price))
     candidates = _candidate_targets(currency or "", country or "", trade_type or "")
     active = {r.target: r for r in RateAdjustment.objects.filter(active=True)}
@@ -46,8 +46,7 @@ def apply_majoration(
         if target in active:
             adj = active[target]
             v = Decimal(str(adj.value))
-            minorer = trade_type == "BUY"
-            if minorer:
+            if getattr(adj, "minorer", False):
                 v = -v
             if adj.mode == RateAdjustment.MODE_PERCENT:
                 value = value * (Decimal("1") + v / 100)
@@ -76,11 +75,17 @@ def apply_cross_adjustment(
     for target in candidates:
         if target in active:
             adj = active[target]
+            v_buy = Decimal(str(adj.value_buy))
+            v_sell = Decimal(str(adj.value_sell))
+            if getattr(adj, "minorer_buy", False):
+                v_buy = -v_buy
+            if getattr(adj, "minorer_sell", False):
+                v_sell = -v_sell
             if adj.mode == CrossRateAdjustment.MODE_PERCENT:
-                buy = buy * (Decimal("1") + Decimal(str(adj.value_buy)) / 100)
-                sell = sell * (Decimal("1") + Decimal(str(adj.value_sell)) / 100)
+                buy = buy * (Decimal("1") + v_buy / 100)
+                sell = sell * (Decimal("1") + v_sell / 100)
             else:
-                buy = buy + Decimal(str(adj.value_buy))
-                sell = sell + Decimal(str(adj.value_sell))
+                buy = buy + v_buy
+                sell = sell + v_sell
             break
     return float(sell / buy)

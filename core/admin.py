@@ -58,15 +58,15 @@ class LiquidityConfigAdmin(admin.ModelAdmin):
 
 @admin.register(RateAdjustment)
 class RateAdjustmentAdmin(admin.ModelAdmin):
-    list_display = ("target", "mode", "value", "active")
-    list_filter = ("mode", "active")
+    list_display = ("target", "mode", "value", "minorer", "active")
+    list_filter = ("mode", "minorer", "active")
     search_fields = ("target",)
 
 
 @admin.register(CrossRateAdjustment)
 class CrossRateAdjustmentAdmin(admin.ModelAdmin):
-    list_display = ("target", "mode", "value_buy", "value_sell", "active")
-    list_filter = ("mode", "active")
+    list_display = ("target", "mode", "value_buy", "minorer_buy", "value_sell", "minorer_sell", "active")
+    list_filter = ("mode", "minorer_buy", "minorer_sell", "active")
     search_fields = ("target",)
 
 

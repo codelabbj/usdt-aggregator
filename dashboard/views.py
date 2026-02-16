@@ -204,6 +204,7 @@ def rate_adjustment_edit(request, pk=None):
             adj.target = _build_rate_adjustment_target(trade_type, currency, country)
             adj.mode = request.POST.get("mode", adj.mode)
             adj.value = request.POST.get("value") or 0
+            adj.minorer = request.POST.get("minorer") == "on"
             adj.active = request.POST.get("active") == "on"
             adj.save()
             messages.success(request, "Ajustement enregistré.")
@@ -443,6 +444,8 @@ def rate_cross_edit(request, pk=None):
             adj.mode = request.POST.get("mode", adj.mode)
             adj.value_buy = Decimal(request.POST.get("value_buy") or "0")
             adj.value_sell = Decimal(request.POST.get("value_sell") or "0")
+            adj.minorer_buy = request.POST.get("minorer_buy") == "on"
+            adj.minorer_sell = request.POST.get("minorer_sell") == "on"
             adj.active = request.POST.get("active") == "on"
             adj.save()
             messages.success(request, "Ajustement croisé enregistré.")

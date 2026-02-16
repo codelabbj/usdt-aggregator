@@ -15,6 +15,7 @@
         <th>Cible</th>
         <th>Mode</th>
         <th>Valeur</th>
+        <th>Minorer</th>
         <th>Actif</th>
         <th>Action</th>
       </tr>
@@ -25,11 +26,12 @@
         <td><code>{{ a.target }}</code></td>
         <td>{{ a.get_mode_display }}</td>
         <td>{{ a.value }}</td>
+        <td>{% if a.minorer %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
         <td>{% if a.active %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
         <td><a href="{% url 'dashboard:rate_adjustment_edit' a.pk %}" class="btn btn-sm btn-secondary">Modifier</a></td>
       </tr>
       {% empty %}
-      <tr><td colspan="5">Aucun ajustement.</td></tr>
+      <tr><td colspan="6">Aucun ajustement.</td></tr>
       {% endfor %}
     </tbody>
   </table>

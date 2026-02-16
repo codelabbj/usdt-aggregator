@@ -105,8 +105,13 @@ class RateAdjustment(models.Model):
     )
     # Mode : % ou montant fixe
     mode = models.CharField(max_length=10, choices=MODE_CHOICES)
-    # Valeur : le % (ex. 2.5) ou le montant fixe. Positif = majoration, négatif = minoration.
+    # Valeur : le % (ex. 2.5) ou le montant fixe.
     value = models.DecimalField(max_digits=20, decimal_places=8)
+    # Si coché : minorer (réduire le prix). Sinon : majorer (augmenter le prix).
+    minorer = models.BooleanField(
+        default=False,
+        help_text="Si coché : minorer (réduire le prix). Sinon : majorer (augmenter le prix).",
+    )
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -138,12 +143,20 @@ class CrossRateAdjustment(models.Model):
     # Ajustement sur le prix BUY (côté devise source : client donne from_currency, reçoit USDT)
     value_buy = models.DecimalField(
         max_digits=20, decimal_places=8, default=0,
-        help_text="% ou montant fixe sur le leg BUY. Positif = majoration, négatif = minoration.",
+        help_text="% ou montant fixe sur le leg BUY.",
+    )
+    minorer_buy = models.BooleanField(
+        default=False,
+        help_text="Si coché : minorer le leg BUY (réduire). Sinon : majorer.",
     )
     # Ajustement sur le prix SELL (côté devise cible : client donne USDT, reçoit to_currency)
     value_sell = models.DecimalField(
         max_digits=20, decimal_places=8, default=0,
-        help_text="% ou montant fixe sur le leg SELL. Positif = majoration, négatif = minoration.",
+        help_text="% ou montant fixe sur le leg SELL.",
+    )
+    minorer_sell = models.BooleanField(
+        default=False,
+        help_text="Si coché : minorer le leg SELL (réduire). Sinon : majorer.",
     )
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -18,6 +18,8 @@ urlpatterns = [
     path("countries/", views.countries_list),
     # API 4 : Liste des devises
     path("currencies/", views.currencies_list),
+    # API 5 : Résolution reference → annonceur (clés exemptes)
+    path("advertiser/", views.advertiser_lookup),
     # --- Désactivés (hors scope) ---
     # path("offers/binance-raw/", views.offers_binance_raw),
     # path("rates/currencies/", views.rates_currencies_list),

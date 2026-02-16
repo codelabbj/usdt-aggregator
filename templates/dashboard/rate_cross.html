@@ -27,7 +27,9 @@
           <th>Source</th>
           <th>Cible</th>
           <th>value_buy</th>
+          <th>Minorer BUY</th>
           <th>value_sell</th>
+          <th>Minorer SELL</th>
           <th>Taux ex. (1 source = X cible)</th>
           <th>Actif</th>
           <th style="width: 180px;">Actions</th>
@@ -40,7 +42,9 @@
           <td>{{ row.from_currency }}</td>
           <td>{{ row.to_currency }}</td>
           <td>{{ row.adjustment.value_buy }}</td>
+          <td>{% if row.adjustment.minorer_buy %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
           <td>{{ row.adjustment.value_sell }}</td>
+          <td>{% if row.adjustment.minorer_sell %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
           <td>{% if row.example_rate is not None %}{{ row.example_rate }}{% else %}—{% endif %}</td>
           <td>{% if row.adjustment.active %}<span class="badge badge-success">Oui</span>{% else %}<span class="badge badge-muted">Non</span>{% endif %}</td>
           <td>
@@ -53,7 +57,7 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="8" style="color: var(--text-muted); padding: 1.5rem;">Aucun ajustement croisé. Cliquez sur « Nouvel ajustement croisé » pour en créer un.</td>
+          <td colspan="10" style="color: var(--text-muted); padding: 1.5rem;">Aucun ajustement croisé. Cliquez sur « Nouvel ajustement croisé » pour en créer un.</td>
         </tr>
         {% endfor %}
       </tbody>

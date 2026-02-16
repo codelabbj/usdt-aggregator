@@ -170,11 +170,23 @@ _CurrenciesResponseSerializer = inline_serializer(
         ),
     ],
 )
-def _format_offer_for_api(o: dict, country: str = None) -> dict:
-    """Formate une offre pour l'API : price (brut), adjusted_price (après règle d'ajustement), min_fiat, max_fiat, annonceur, moyens de paiement."""
-    return {
-        "price": o.get("price"),
-        "adjusted_price": o.get("adjusted_price") or o.get("price"),
+def _is_billing_exempt(request) -> bool:
+    """True si la requête est authentifiée par une clé API exempte de facturation (interne), ou sans clé API."""
+    api_key = getattr(getattr(request, "user", None), "api_key", None)
+    if api_key is None:
+        return True  # JWT ou autre auth : on renvoie tout (comportement par défaut)
+    return getattr(api_key, "billing_exempt", False)
+
+
+def _format_offer_for_api(o: dict, country: str = None, for_client: bool = False) -> dict:
+    """
+    Formate une offre pour l'API.
+    - for_client=False (clés exemptes / interne) : price (brut), adjusted_price, tous les champs.
+    - for_client=True (clients facturés) : price = prix ajusté ; pas de platform ni payment_methods ;
+      advertiser sans id (user_no), avec reference à la place.
+    """
+    adjusted = o.get("adjusted_price") or o.get("price")
+    base = {
         "country": country or o.get("country"),
         "fiat": o.get("fiat"),
         "trade_type": o.get("trade_type"),
@@ -185,6 +197,17 @@ def _format_offer_for_api(o: dict, country: str = None) -> dict:
         "offer_id": o.get("offer_id"),
         "platform": o.get("platform"),
     }
+    if for_client:
+        base["price"] = adjusted
+        base.pop("platform", None)
+        base.pop("payment_methods", None)
+        base.pop("advertiser", None)
+        adv = o.get("advertiser")
+        base["reference"] = str(adv.get("user_no") or "") if isinstance(adv, dict) else ""
+    else:
+        base["price"] = o.get("price")
+        base["adjusted_price"] = adjusted
+    return base
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +246,8 @@ def offers_list(request):
     for o in data:
         o.setdefault("fiat", fiat)
     data = sorted(data, key=lambda x: (x.get("adjusted_price") or x.get("price") or 0), reverse=(trade_type == "SELL"))
-    offers_clean = [_format_offer_for_api(o, country) for o in data]
+    for_client = not _is_billing_exempt(request)
+    offers_clean = [_format_offer_for_api(o, country, for_client=for_client) for o in data]
     total = len(offers_clean)
     start = (page - 1) * page_size
     end = start + page_size
@@ -329,7 +353,8 @@ def offers_best(request):
     for o in data:
         o.setdefault("fiat", fiat)
     data = sorted(data, key=lambda x: (x.get("adjusted_price") or x.get("price") or 0), reverse=(trade_type == "SELL"))
-    offers_clean = [_format_offer_for_api(o, country) for o in data]
+    for_client = not _is_billing_exempt(request)
+    offers_clean = [_format_offer_for_api(o, country, for_client=for_client) for o in data]
     offers_top = offers_clean[:limit]
     return Response({
         "count": len(offers_top),
@@ -425,12 +450,18 @@ def cross_rate(request):
             status=status.HTTP_404_NOT_FOUND,
         )
     rate = apply_cross_adjustment(price_buy_from, price_sell_to, from_c, to_c)
+    for_client = not _is_billing_exempt(request)
+    best_offer_from = _format_offer_for_api(best_from, country_from, for_client=for_client)
+    best_offer_to = _format_offer_for_api(best_to, country_to, for_client=for_client)
+    if for_client:
+        best_offer_from.pop("price", None)
+        best_offer_to.pop("price", None)
     return Response({
         "from_currency": from_c,
         "to_currency": to_c,
         "rate": round(rate, 8),
-        "best_offer_from": _format_offer_for_api(best_from, country_from),
-        "best_offer_to": _format_offer_for_api(best_to, country_to),
+        "best_offer_from": best_offer_from,
+        "best_offer_to": best_offer_to,
     })
 
 
@@ -493,6 +524,72 @@ def countries_list(request):
     return Response({
         "countries": [{"code": c.code, "name": c.name, "fiat": c.currency.code} for c in countries]
     })
+
+
+# ---------------------------------------------------------------------------
+# API 5 : Résolution reference → annonceur (clés exemptes uniquement)
+# ---------------------------------------------------------------------------
+@extend_schema(
+    parameters=[
+        OpenApiParameter("reference", str, description="Référence annonceur (id reçu par le client dans l’offre)."),
+        OpenApiParameter("fiat", str, description="Devise (ex. XOF, GHS)."),
+        OpenApiParameter("trade_type", str, description="BUY ou SELL."),
+        OpenApiParameter("country", str, required=False, description="Code pays (ex. BJ). Optionnel."),
+    ],
+    description="Résout une référence (annonceur) et retourne les infos complètes pour exécuter la transaction. Réservé aux clés API exemptes de facturation.",
+    responses={
+        200: OpenApiResponse(description="Advertiser + moyens de paiement + contexte offre."),
+        403: OpenApiResponse(description="Clé non exempte : accès refusé."),
+        404: OpenApiResponse(description="Aucune offre trouvée pour cette référence."),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def advertiser_lookup(request):
+    """
+    Le client utilise notre taux et renvoie la « reference » de l’offre choisie.
+    Cet endpoint (réservé aux clés exemptes) permet de retrouver l’annonceur et ses infos
+    (nick_name, moyens de paiement, min/max, etc.) pour effectuer la transaction.
+    """
+    if not _is_billing_exempt(request):
+        return Response(
+            {"error": "Accès réservé aux clés API exemptes de facturation."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    reference = (request.query_params.get("reference") or "").strip()
+    fiat = (request.query_params.get("fiat") or "").strip().upper()
+    trade_type = (request.query_params.get("trade_type") or "").strip().upper()
+    country = request.query_params.get("country") or None
+    if not reference or not fiat or trade_type not in ("BUY", "SELL"):
+        return Response(
+            {"error": "Paramètres requis : reference, fiat, trade_type (BUY ou SELL)."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if SANDBOX_API:
+        return Response({"error": "Non disponible en mode sandbox."}, status=status.HTTP_404_NOT_FOUND)
+    offers = fetch_offers(asset="USDT", fiat=fiat, trade_type=trade_type, country=country, platform_code=None)
+    ref_str = str(reference)
+    for o in offers:
+        adv = o.get("advertiser") or {}
+        if isinstance(adv, dict) and str(adv.get("user_no")) == ref_str:
+            return Response({
+                "reference": ref_str,
+                "advertiser": adv,
+                "payment_methods": o.get("payment_methods"),
+                "offer_id": o.get("offer_id"),
+                "platform": o.get("platform"),
+                "fiat": o.get("fiat"),
+                "trade_type": o.get("trade_type"),
+                "country": country or o.get("country"),
+                "min_fiat": o.get("min_fiat"),
+                "max_fiat": o.get("max_fiat"),
+                "price": o.get("price"),
+                "adjusted_price": o.get("adjusted_price") or o.get("price"),
+            })
+    return Response(
+        {"error": "Aucune offre trouvée pour cette référence (ou offre expirée)."},
+        status=status.HTTP_404_NOT_FOUND,
+    )
 
 
 # xof_countries_list — désactivé ; utiliser GET /countries/?fiat=XOF

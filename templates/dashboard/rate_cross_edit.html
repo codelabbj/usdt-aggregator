@@ -24,12 +24,14 @@
     <div class="form-group">
       <label>Valeur BUY (premier leg : devise source → USDT)</label>
       <input type="number" name="value_buy" step="any" value="{{ adjustment.value_buy|default:0 }}">
-      <small>Premier leg : le client donne la devise source et reçoit des USDT (côté « achat USDT »). Cette valeur (% ou fixe) est appliquée au prix de ce leg. Positif = majoration, négatif = minoration.</small>
+      <label style="display:inline-block; margin-top: 0.35rem;"><input type="checkbox" name="minorer_buy" {% if adjustment.minorer_buy %}checked{% endif %}> Minorer le leg BUY</label>
+      <small>Premier leg : le client donne la devise source et reçoit des USDT. Si « Minorer » est coché, la valeur réduit le prix ; sinon elle l’augmente.</small>
     </div>
     <div class="form-group">
       <label>Valeur SELL (second leg : USDT → devise cible)</label>
       <input type="number" name="value_sell" step="any" value="{{ adjustment.value_sell|default:0 }}">
-      <small>Second leg : le client donne des USDT et reçoit la devise cible (côté « vente USDT »). Cette valeur (% ou fixe) est appliquée au prix de ce leg. Positif = majoration, négatif = minoration.</small>
+      <label style="display:inline-block; margin-top: 0.35rem;"><input type="checkbox" name="minorer_sell" {% if adjustment.minorer_sell %}checked{% endif %}> Minorer le leg SELL</label>
+      <small>Second leg : le client donne des USDT et reçoit la devise cible. Si « Minorer » est coché, la valeur réduit le prix ; sinon elle l’augmente.</small>
     </div>
     <div class="form-group">
       <label><input type="checkbox" name="active" {% if adjustment.active %}checked{% endif %}> Actif</label>
