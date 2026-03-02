@@ -17,13 +17,21 @@ def _binance_search_payload(
     country: Optional[str] = None,
     pay_types: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Payload identique au frontend p2p.binance.com pour que les filtres (ex. countries) soient appliqués."""
+    """Payload identique au frontend p2p.binance.com pour que les filtres (ex. countries) soient appliqués.
+    
+    IMPORTANT: Le tradeType Binance est du point de vue de l'annonceur.
+    - Si le client veut ACHETER (BUY) de l'USDT → chercher des annonceurs qui VENDENT (SELL)
+    - Si le client veut VENDRE (SELL) de l'USDT → chercher des annonceurs qui ACHÈTENT (BUY)
+    """
+    # Inverser le trade_type car Binance utilise la perspective de l'annonceur
+    binance_trade_type = "SELL" if trade_type == "BUY" else "BUY"
+    
     return {
         "asset": asset,
         "fiat": fiat,
         "page": page,
         "rows": rows,
-        "tradeType": trade_type,
+        "tradeType": binance_trade_type,
         "countries": [country] if country else [],
         "proMerchantAds": False,
         "shieldMerchantAds": False,
